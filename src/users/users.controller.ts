@@ -1,17 +1,21 @@
-import { Controller, Get, Param, Post, Body } from '@nestjs/common';
+import { Controller, Get, Param, Patch, Body } from '@nestjs/common';
 import { UsersService } from './users.service';
+import { ChangePhoneDto } from './dto/change-phone.dto';
 
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
-  @Get(':userId/games')
-  listGames(@Param('userId') userId: string) {
-    return this.usersService.listGames(userId);
+  @Get(':phoneNumber/games')
+  async listGames(@Param('phoneNumber') phoneNumber: string) {
+    return this.usersService.listUserGames(phoneNumber);
   }
 
-  @Post('change-phone')
-  changePhone(@Body() body: { oldPhone: string; newPhone: string }) {
-    return this.usersService.changePhone(body);
+  @Patch('change-phone')
+  async changePhone(@Body() dto: ChangePhoneDto) {
+    return this.usersService.changePhoneNumber(
+      dto.oldPhoneNumber,
+      dto.newPhoneNumber,
+    );
   }
 }

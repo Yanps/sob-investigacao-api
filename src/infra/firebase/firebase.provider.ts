@@ -1,17 +1,27 @@
 import { Provider } from '@nestjs/common';
-import admin, { ServiceAccount } from 'firebase-admin';
+import admin from 'firebase-admin';
+import { Firestore } from 'firebase-admin/firestore';
 
 export const FIRESTORE = Symbol('FIRESTORE');
 
 export const firebaseProvider: Provider = {
   provide: FIRESTORE,
-  useFactory: () => {
-    if (admin.apps.length === 0) {
-      admin.initializeApp({
-        credential: admin.credential.applicationDefault(),
-      });
-    }
+  useFactory: (): Firestore => {
+    try {
+      if (admin.apps.length === 0) {
+        console.log('🔥 Initializing Firebase Admin...');
+        admin.initializeApp({
+          credential: admin.credential.applicationDefault(),
+        });
+        console.log('✅ Firebase Admin initialized');
+      }
 
-    return admin.firestore();
+      const firestore = admin.firestore();
+      console.log('✅ Firestore instance created');
+      return firestore;
+    } catch (error) {
+      console.error('❌ Error initializing Firebase:', error);
+      throw error;
+    }
   },
 };

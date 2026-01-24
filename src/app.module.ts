@@ -9,14 +9,7 @@ import { AgentModule } from './agent/agent.module';
 import { FirebaseModule } from './infra/firebase/firebase.module';
 
 @Module({
-  imports: [
-    UsersModule,
-    GamesModule,
-    WebhooksModule,
-    JobsModule,
-    AgentModule,
-    FirebaseModule,
-  ],
+  imports: [FirebaseModule, UsersModule, GamesModule, WebhooksModule, JobsModule, AgentModule],
   controllers: [AppController],
   providers: [AppService],
 })
