@@ -1,4 +1,4 @@
 export class ChangePhoneDto {
-  oldPhoneNumber: string;
+  email: string;
   newPhoneNumber: string;
 }

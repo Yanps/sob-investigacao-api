@@ -61,32 +61,58 @@ export class UsersService {
 
   /**
    * Migra o telefone do usuário preservando o histórico de mensagens.
+   * Busca o usuário pelo email na collection 'orders' e atualiza o telefone.
    *
    * Estratégia:
-   * 1. Verifica se o customer existe no telefone antigo
-   * 2. Verifica se já existe chat/customer no telefone novo (evita conflitos)
-   * 3. Migra o chat (cria novo documento, deleta o antigo)
-   * 4. Atualiza o customer (novo phoneNumber, mantém antigo como phoneNumberAlt)
+   * 1. Busca na collection 'orders' pelo email para obter o phoneNumber atual
+   * 2. Busca o customer na collection 'customers' usando o phoneNumber
+   * 3. Verifica se já existe chat/customer no telefone novo (evita conflitos)
+   * 4. Migra o chat (cria novo documento, deleta o antigo)
+   * 5. Atualiza o customer e order (novo phoneNumber, mantém antigo como phoneNumberAlt)
    *
    * Usa batch write para garantir atomicidade o máximo possível.
    * Preserva ambas as estruturas (lastMessage e messages array).
    */
   async changePhoneNumber(
-    oldPhoneNumber: string,
+    email: string,
     newPhoneNumber: string,
   ): Promise<{ success: boolean; message: string }> {
-    // Validação básica
-    if (oldPhoneNumber === newPhoneNumber) {
-      throw new BadRequestException(
-        'O telefone antigo e o novo não podem ser iguais',
+    // Normaliza o email e telefone
+    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedNew = newPhoneNumber.trim();
+
+    // 1. Busca na collection 'orders' pelo email para obter o phoneNumber atual
+    const orderSnap = await this.firestore
+      .collection('orders')
+      .where('email', '==', normalizedEmail)
+      .limit(1)
+      .get();
+
+    if (orderSnap.empty) {
+      throw new NotFoundException(
+        `Order não encontrado para o email: ${normalizedEmail}`,
       );
     }
 
-    // Normaliza os números (remove espaços, caracteres especiais se necessário)
-    const normalizedOld = oldPhoneNumber.trim();
-    const normalizedNew = newPhoneNumber.trim();
+    const orderData = orderSnap.docs[0].data();
+    const oldPhoneNumber = orderData.phoneNumber as string;
 
-    // Busca o customer no telefone antigo
+    if (!oldPhoneNumber) {
+      throw new NotFoundException(
+        `PhoneNumber não encontrado no order para o email: ${normalizedEmail}`,
+      );
+    }
+
+    const normalizedOld = oldPhoneNumber.toString().trim();
+
+    // Validação básica
+    if (normalizedOld === normalizedNew) {
+      throw new BadRequestException(
+        'O telefone novo não pode ser igual ao telefone atual',
+      );
+    }
+
+    // 2. Busca o customer na collection 'customers' usando o phoneNumber
     const customerSnap = await this.firestore
       .collection('customers')
       .where('phoneNumber', '==', normalizedOld)
@@ -135,7 +161,7 @@ export class UsersService {
     // Prepara o batch write para operações atômicas
     const batch = this.firestore.batch();
 
-    // 1. Atualiza o customer: novo phoneNumber, mantém antigo como phoneNumberAlt
+    // 3. Atualiza o customer: novo phoneNumber, mantém antigo como phoneNumberAlt
     const customerRef = this.firestore
       .collection('customers')
       .doc(customerDoc.id);
@@ -145,7 +171,17 @@ export class UsersService {
       phoneNumberAlt: normalizedOld,
     });
 
-    // 2. Se existe chat, migra para o novo telefone
+    // 4. Atualiza o order com o novo phoneNumber
+    const orderRef = this.firestore
+      .collection('orders')
+      .doc(orderSnap.docs[0].id);
+
+    batch.update(orderRef, {
+      phoneNumber: normalizedNew,
+      phoneNumberAlt: normalizedOld,
+    });
+
+    // 5. Se existe chat, migra para o novo telefone
     // Preserva TODA a estrutura (lastMessage, messages array, etc)
     if (oldChatSnap.exists) {
       const chatData = oldChatSnap.data() as Chat | undefined;

@@ -14,7 +14,7 @@ export class UsersController {
   @Patch('change-phone')
   async changePhone(@Body() dto: ChangePhoneDto) {
     return this.usersService.changePhoneNumber(
-      dto.oldPhoneNumber,
+      dto.email,
       dto.newPhoneNumber,
     );
   }
