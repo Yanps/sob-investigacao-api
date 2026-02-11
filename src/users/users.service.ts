@@ -38,6 +38,116 @@ export class UsersService {
     return undefined;
   }
 
+  /**
+   * Lista clientes (customers) com paginação.
+   * Filtros opcionais: phoneNumber (exato), email (exato, busca por doc id).
+   */
+  async listCustomers(params: {
+    phoneNumber?: string;
+    email?: string;
+    limit?: number;
+    startAfter?: string;
+  }): Promise<{
+    customers: (Customer & { id: string })[];
+    nextCursor?: string;
+  }> {
+    const limit = Math.min(Math.max(params.limit ?? 20, 1), 100);
+
+    if (params.email?.trim()) {
+      const doc = await this.firestore
+        .collection('customers')
+        .doc(params.email.trim().toLowerCase())
+        .get();
+      if (!doc.exists) {
+        return { customers: [] };
+      }
+      const data = doc.data() as Customer;
+      return {
+        customers: [{ id: doc.id, ...data }],
+      };
+    }
+
+    let query = this.firestore
+      .collection('customers')
+      .orderBy('createdAt', 'desc')
+      .limit(limit + 1);
+
+    if (params.phoneNumber?.trim()) {
+      query = query.where('phoneNumber', '==', params.phoneNumber.trim());
+    }
+    if (params.startAfter) {
+      const cursor = await this.firestore
+        .collection('customers')
+        .doc(params.startAfter)
+        .get();
+      if (cursor.exists) {
+        query = query.startAfter(cursor);
+      }
+    }
+
+    const snapshot = await query.get();
+    const docs = snapshot.docs.slice(0, limit);
+    const customers = docs.map((doc) => ({
+      id: doc.id,
+      ...(doc.data() as Customer),
+    }));
+    const nextCursor =
+      snapshot.docs.length > limit ? snapshot.docs[limit - 1]?.id : undefined;
+    return { customers, nextCursor };
+  }
+
+  /**
+   * Detalhe do usuário por telefone: customer + jogos + resumo de pedidos.
+   */
+  async getUserByPhone(phoneNumber: string): Promise<{
+    customer: (Customer & { id: string }) | null;
+    games: string[];
+    ordersCount: number;
+  }> {
+    const normalized = String(phoneNumber).trim();
+    const byPhone = await this.firestore
+      .collection('customers')
+      .where('phoneNumber', '==', normalized)
+      .limit(1)
+      .get();
+    const byAlt = await this.firestore
+      .collection('customers')
+      .where('phoneNumberAlt', '==', normalized)
+      .limit(1)
+      .get();
+
+    const customerDoc = byPhone.docs[0] ?? byAlt.docs[0];
+    const customer: (Customer & { id: string }) | null = customerDoc
+      ? { id: customerDoc.id, ...(customerDoc.data() as Customer) }
+      : null;
+
+    const games = await this.listUserGames(normalized);
+
+    const ordersSnap = await this.firestore
+      .collection('orders')
+      .where('phoneNumber', '==', normalized)
+      .get();
+    const ordersAltSnap = await this.firestore
+      .collection('orders')
+      .where('phoneNumberAlt', '==', normalized)
+      .get();
+    const ordersCount = ordersSnap.size + ordersAltSnap.size;
+    const seen = new Set<string>();
+    for (const d of ordersSnap.docs) {
+      seen.add(d.id);
+    }
+    for (const d of ordersAltSnap.docs) {
+      if (!seen.has(d.id)) seen.add(d.id);
+    }
+    const uniqueOrdersCount = seen.size;
+
+    return {
+      customer,
+      games,
+      ordersCount: uniqueOrdersCount,
+    };
+  }
+
   async listUserGames(phoneNumber: string): Promise<string[]> {
     const snap = await this.firestore
       .collection('chats')

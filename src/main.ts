@@ -8,6 +8,7 @@ async function bootstrap() {
       logger: ['error', 'warn', 'log'],
     });
 
+    app.enableCors({ origin: true }); // aceita qualquer origin
     app.enableShutdownHooks();
     app.setGlobalPrefix('api');
 

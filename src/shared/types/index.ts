@@ -1,4 +1,10 @@
+export * from './agent-response.schema';
 export * from './chat.schema';
+export * from './conversation.schema';
 export * from './customer.schema';
-// export * from './chat-massage.type'; // Removido: conflito com ChatMessage de chat.schema.ts
 export * from './firestore.types';
+export * from './game.schema';
+export * from './order.schema';
+export * from './processing-job.schema';
+export * from './shopify.types';
+export * from './webhook-log.schema';

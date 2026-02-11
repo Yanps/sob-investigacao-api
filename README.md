@@ -31,6 +31,26 @@
 $ pnpm install
 ```
 
+### Variáveis de ambiente
+
+| Variável | Obrigatória | Descrição |
+|----------|-------------|-----------|
+| `API_KEY` | Sim* | Chave para autenticar requisições (header `X-API-Key` ou `Authorization: Bearer <key>`). \*Exceto rotas públicas. |
+| `JWT_SECRET` | Para login dashboard | Secret para assinar e validar JWTs. Obrigatório se usar login de usuários do dashboard. |
+| `JWT_EXPIRES_IN` | Não | Validade do JWT (ex.: `7d`, `24h`). Default: `7d`. |
+| `SHOPIFY_WEBHOOK_SECRET` | Para webhooks | Secret para validar HMAC dos webhooks do Shopify. |
+| `CORS_ORIGIN` | Não | Origens permitidas (separadas por vírgula). Se não definido, todas as origens são permitidas. |
+| `PORT` | Não | Porta do servidor (default: 3000). |
+
+### Segurança e autenticação
+
+- **Rotas públicas (sem API Key):** `POST /api/auth/login`, `POST /api/webhooks/shopify/*`.
+- **Autenticação:** Os demais endpoints aceitam **API Key** ou **JWT** (usuários do dashboard):
+  - **API Key:** header `X-API-Key: <sua-chave>` ou `Authorization: Bearer <api-key>`.
+  - **JWT:** após `POST /api/auth/login` com email/senha, envie `Authorization: Bearer <access_token>`.
+- **Usuários do dashboard:** Documentos na collection Firestore `dashboard_users` (email, passwordHash, name, role). Para definir a primeira senha (quando `passwordHash` é `placeholder`), use `POST /api/auth/set-password` com **API Key** e body `{ "email": "...", "newPassword": "..." }`.
+- **Webhooks Shopify:** Protegidos apenas por HMAC com `SHOPIFY_WEBHOOK_SECRET`.
+
 ## Compile and run the project
 
 ```bash

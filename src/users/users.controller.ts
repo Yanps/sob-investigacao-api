@@ -1,4 +1,12 @@
-import { Controller, Get, Param, Patch, Body } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Body,
+  Query,
+  NotFoundException,
+} from '@nestjs/common';
 import { UsersService } from './users.service';
 import { ChangePhoneDto } from './dto/change-phone.dto';
 
@@ -6,9 +14,38 @@ import { ChangePhoneDto } from './dto/change-phone.dto';
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
+  @Get()
+  async list(
+    @Query('phoneNumber') phoneNumber?: string,
+    @Query('email') email?: string,
+    @Query('limit') limit?: string,
+    @Query('startAfter') startAfter?: string,
+  ) {
+    const limitNum = limit
+      ? Math.min(Math.max(parseInt(limit, 10) || 20, 1), 100)
+      : 20;
+    return this.usersService.listCustomers({
+      phoneNumber,
+      email,
+      limit: limitNum,
+      startAfter,
+    });
+  }
+
   @Get(':phoneNumber/games')
   async listGames(@Param('phoneNumber') phoneNumber: string) {
     return this.usersService.listUserGames(phoneNumber);
+  }
+
+  @Get(':phoneNumber')
+  async getByPhone(@Param('phoneNumber') phoneNumber: string) {
+    const result = await this.usersService.getUserByPhone(phoneNumber);
+    if (!result.customer && result.ordersCount === 0 && result.games.length === 0) {
+      throw new NotFoundException(
+        `Nenhum usuário encontrado para o telefone: ${phoneNumber}`,
+      );
+    }
+    return result;
   }
 
   @Patch('change-phone')
