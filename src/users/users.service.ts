@@ -5,7 +5,7 @@ import {
   ConflictException,
   NotFoundException,
 } from '@nestjs/common';
-import { Firestore } from 'firebase-admin/firestore';
+import { Firestore, FieldPath } from 'firebase-admin/firestore';
 import { FIRESTORE } from '../infra/firebase/firebase.provider';
 import type { Chat } from '../shared/types/chat.schema';
 import type { Customer } from '../shared/types/customer.schema';
@@ -54,17 +54,23 @@ export class UsersService {
     const limit = Math.min(Math.max(params.limit ?? 20, 1), 100);
 
     if (params.email?.trim()) {
-      const doc = await this.firestore
+      const emailPrefix = params.email.trim().toLowerCase();
+      const snapshot = await this.firestore
         .collection('customers')
-        .doc(params.email.trim().toLowerCase())
+        .orderBy(FieldPath.documentId())
+        .startAt(emailPrefix)
+        .endAt(emailPrefix + '\uf8ff')
+        .limit(limit + 1)
         .get();
-      if (!doc.exists) {
-        return { customers: [] };
-      }
-      const data = doc.data() as Customer;
-      return {
-        customers: [{ id: doc.id, ...data }],
-      };
+
+      const docs = snapshot.docs.slice(0, limit);
+      const customers = docs.map((doc) => ({
+        id: doc.id,
+        ...(doc.data() as Customer),
+      }));
+      const nextCursor =
+        snapshot.docs.length > limit ? snapshot.docs[limit - 1]?.id : undefined;
+      return { customers, nextCursor };
     }
 
     // Se busca por phoneNumber, não usa orderBy para evitar necessidade de índice composto
