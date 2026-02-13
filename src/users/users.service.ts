@@ -76,13 +76,33 @@ export class UsersService {
     // Se busca por phoneNumber, não usa orderBy para evitar necessidade de índice composto
     // (busca por phoneNumber geralmente retorna apenas 1 resultado)
     if (params.phoneNumber?.trim()) {
-      const phoneQuery = this.firestore
-        .collection('customers')
-        .where('phoneNumber', '==', params.phoneNumber.trim())
-        .limit(limit + 1);
+      // Normaliza o telefone: remove caracteres não numéricos
+      const phoneDigits = params.phoneNumber.replace(/\D/g, '');
+      const phoneAsNumber = parseInt(phoneDigits, 10);
 
-      const snapshot = await phoneQuery.get();
-      const docs = snapshot.docs.slice(0, limit);
+      // Busca tanto como número quanto como string (para cobrir ambos os casos)
+      const [snapNumber, snapString] = await Promise.all([
+        this.firestore
+          .collection('customers')
+          .where('phoneNumber', '==', phoneAsNumber)
+          .limit(limit + 1)
+          .get(),
+        this.firestore
+          .collection('customers')
+          .where('phoneNumber', '==', phoneDigits)
+          .limit(limit + 1)
+          .get(),
+      ]);
+
+      // Combina resultados únicos
+      const seen = new Set<string>();
+      const allDocs = [...snapNumber.docs, ...snapString.docs].filter((doc) => {
+        if (seen.has(doc.id)) return false;
+        seen.add(doc.id);
+        return true;
+      });
+
+      const docs = allDocs.slice(0, limit);
       const customers = docs.map((doc) => ({
         id: doc.id,
         ...(doc.data() as Customer),
@@ -124,40 +144,55 @@ export class UsersService {
     games: string[];
     ordersCount: number;
   }> {
-    const normalized = String(phoneNumber).trim();
-    const byPhone = await this.firestore
-      .collection('customers')
-      .where('phoneNumber', '==', normalized)
-      .limit(1)
-      .get();
-    const byAlt = await this.firestore
-      .collection('customers')
-      .where('phoneNumberAlt', '==', normalized)
-      .limit(1)
-      .get();
+    // Normaliza o telefone: remove caracteres não numéricos
+    const phoneDigits = phoneNumber.replace(/\D/g, '');
+    const phoneAsNumber = parseInt(phoneDigits, 10);
 
-    const customerDoc = byPhone.docs[0] ?? byAlt.docs[0];
+    // Busca como número e como string para cobrir ambos os casos
+    const [byPhoneNum, byPhoneStr, byAltNum, byAltStr] = await Promise.all([
+      this.firestore
+        .collection('customers')
+        .where('phoneNumber', '==', phoneAsNumber)
+        .limit(1)
+        .get(),
+      this.firestore
+        .collection('customers')
+        .where('phoneNumber', '==', phoneDigits)
+        .limit(1)
+        .get(),
+      this.firestore
+        .collection('customers')
+        .where('phoneNumberAlt', '==', phoneAsNumber)
+        .limit(1)
+        .get(),
+      this.firestore
+        .collection('customers')
+        .where('phoneNumberAlt', '==', phoneDigits)
+        .limit(1)
+        .get(),
+    ]);
+
+    const customerDoc =
+      byPhoneNum.docs[0] ?? byPhoneStr.docs[0] ?? byAltNum.docs[0] ?? byAltStr.docs[0];
     const customer: (Customer & { id: string }) | null = customerDoc
       ? { id: customerDoc.id, ...(customerDoc.data() as Customer) }
       : null;
 
-    const games = await this.listUserGames(normalized);
+    const games = await this.listUserGames(phoneDigits);
 
-    const ordersSnap = await this.firestore
-      .collection('orders')
-      .where('phoneNumber', '==', normalized)
-      .get();
-    const ordersAltSnap = await this.firestore
-      .collection('orders')
-      .where('phoneNumberAlt', '==', normalized)
-      .get();
-    const ordersCount = ordersSnap.size + ordersAltSnap.size;
+    // Busca orders como número e string
+    const [ordersSnapNum, ordersSnapStr, ordersAltSnapNum, ordersAltSnapStr] = await Promise.all([
+      this.firestore.collection('orders').where('phoneNumber', '==', phoneAsNumber).get(),
+      this.firestore.collection('orders').where('phoneNumber', '==', phoneDigits).get(),
+      this.firestore.collection('orders').where('phoneNumberAlt', '==', phoneAsNumber).get(),
+      this.firestore.collection('orders').where('phoneNumberAlt', '==', phoneDigits).get(),
+    ]);
+    // Conta orders únicos
     const seen = new Set<string>();
-    for (const d of ordersSnap.docs) {
-      seen.add(d.id);
-    }
-    for (const d of ordersAltSnap.docs) {
-      if (!seen.has(d.id)) seen.add(d.id);
+    for (const snap of [ordersSnapNum, ordersSnapStr, ordersAltSnapNum, ordersAltSnapStr]) {
+      for (const d of snap.docs) {
+        seen.add(d.id);
+      }
     }
     const uniqueOrdersCount = seen.size;
 
