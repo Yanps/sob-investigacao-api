@@ -14,7 +14,7 @@ function phaseAnalysisDocId(gameId: string, phaseId: string): string {
   return `${String(gameId).replace(/\//g, '_')}_${String(phaseId).replace(/\//g, '_')}`;
 }
 const STATUSES = ['pending', 'processing', 'done', 'failed'] as const;
-const MAX_CHATS_ANALYTICS = 3000;
+const MAX_CHATS_ANALYTICS = 1000;
 const PERIOD_OPTIONS = ['24h', '7d', '30d'] as const;
 type PeriodOption = (typeof PERIOD_OPTIONS)[number];
 
@@ -201,44 +201,28 @@ export class JobsService {
     period?: string;
   }> {
     const now = new Date();
-    let start: Date;
+    let startTimestamp: Timestamp | null = null;
+
     if (period === '24h') {
-      start = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      startTimestamp = Timestamp.fromDate(new Date(now.getTime() - 24 * 60 * 60 * 1000));
     } else if (period === '7d') {
-      start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      startTimestamp = Timestamp.fromDate(new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000));
     } else if (period === '30d') {
-      start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-    } else {
-      // all time: no filter
-      const counts = await Promise.all(
-        STATUSES.map(async (status) => {
-          const snap = await this.firestore
-            .collection(COLLECTION)
-            .where('status', '==', status)
-            .limit(500)
-            .get();
-          return { status, count: snap.size };
-        }),
-      );
-      return {
-        pending: counts.find((c) => c.status === 'pending')?.count ?? 0,
-        processing: counts.find((c) => c.status === 'processing')?.count ?? 0,
-        done: counts.find((c) => c.status === 'done')?.count ?? 0,
-        failed: counts.find((c) => c.status === 'failed')?.count ?? 0,
-      };
+      startTimestamp = Timestamp.fromDate(new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000));
     }
 
-    const startTimestamp = Timestamp.fromDate(start);
+    // Usar count() do Firestore para evitar baixar documentos completos
     const counts = await Promise.all(
       STATUSES.map(async (status) => {
-        const snap = await this.firestore
-          .collection(COLLECTION)
-          .where('status', '==', status)
-          .where('createdAt', '>=', startTimestamp)
-          .get();
-        return { status, count: snap.size };
+        let query = this.firestore.collection(COLLECTION).where('status', '==', status);
+        if (startTimestamp) {
+          query = query.where('createdAt', '>=', startTimestamp);
+        }
+        const countSnap = await query.count().get();
+        return { status, count: countSnap.data().count };
       }),
     );
+
     return {
       pending: counts.find((c) => c.status === 'pending')?.count ?? 0,
       processing: counts.find((c) => c.status === 'processing')?.count ?? 0,
@@ -274,7 +258,6 @@ export class JobsService {
     gameId?: string;
   }> {
     const { period, gameId } = params;
-    const jobStats = await this.getStats(period);
 
     const now = Date.now();
     let startMs: number | null = null;
@@ -284,39 +267,54 @@ export class JobsService {
 
     const startTimestamp = startMs != null ? Timestamp.fromDate(new Date(startMs)) : null;
 
-    // Tempo médio: jobs done no período, média (finishedAt - startedAt) em minutos
-    let tempoMedioTotalMin = 0;
-    if (startTimestamp) {
-      const doneSnap = await this.firestore
-        .collection(COLLECTION)
-        .where('status', '==', 'done')
-        .where('createdAt', '>=', startTimestamp)
-        .get();
-      const durations: number[] = [];
-      for (const doc of doneSnap.docs) {
-        const d = doc.data();
-        const started = toTimestampMs(d.startedAt);
-        const finished = toTimestampMs(d.finishedAt);
-        if (started != null && finished != null && finished >= started) {
-          durations.push((finished - started) / (60 * 1000));
-        }
-      }
-      tempoMedioTotalMin = durations.length > 0 ? durations.reduce((a, b) => a + b, 0) / durations.length : 0;
-    } else {
-      const doneSnap = await this.firestore.collection(COLLECTION).where('status', '==', 'done').limit(500).get();
-      const durations: number[] = [];
-      for (const doc of doneSnap.docs) {
-        const d = doc.data();
-        const started = toTimestampMs(d.startedAt);
-        const finished = toTimestampMs(d.finishedAt);
-        if (started != null && finished != null && finished >= started) {
-          durations.push((finished - started) / (60 * 1000));
-        }
-      }
-      tempoMedioTotalMin = durations.length > 0 ? durations.reduce((a, b) => a + b, 0) / durations.length : 0;
-    }
+    // Executar queries em paralelo para melhor performance
+    // Usar select() para trazer apenas campos necessários (reduz transferência de dados)
+    const [jobStats, doneJobsSnap, chatsSnap] = await Promise.all([
+      // 1. Stats dos jobs (usa count() internamente)
+      this.getStats(period),
+      // 2. Jobs done para calcular tempo médio - só precisa de startedAt e finishedAt
+      startTimestamp
+        ? this.firestore
+            .collection(COLLECTION)
+            .where('status', '==', 'done')
+            .where('createdAt', '>=', startTimestamp)
+            .select('startedAt', 'finishedAt')
+            .get()
+        : this.firestore
+            .collection(COLLECTION)
+            .where('status', '==', 'done')
+            .select('startedAt', 'finishedAt')
+            .limit(500)
+            .get(),
+      // 3. Chats para métricas de fases - só precisa de lastMessage, messages, lastUpdated
+      startTimestamp
+        ? this.firestore
+            .collection(CHATS_COLLECTION)
+            .where('lastUpdated', '>=', startTimestamp)
+            .orderBy('lastUpdated', 'desc')
+            .select('lastMessage', 'messages', 'lastUpdated', 'createdAt')
+            .limit(MAX_CHATS_ANALYTICS)
+            .get()
+        : this.firestore
+            .collection(CHATS_COLLECTION)
+            .select('lastMessage', 'messages', 'lastUpdated', 'createdAt')
+            .limit(MAX_CHATS_ANALYTICS)
+            .get(),
+    ]);
 
-    // Chats: insultos, desistência, mensagens, duração e textos por fase (filtrar por período e gameId em memória)
+    // Tempo médio: jobs done no período, média (finishedAt - startedAt) em minutos
+    const durations: number[] = [];
+    for (const doc of doneJobsSnap.docs) {
+      const d = doc.data();
+      const started = toTimestampMs(d.startedAt);
+      const finished = toTimestampMs(d.finishedAt);
+      if (started != null && finished != null && finished >= started) {
+        durations.push((finished - started) / (60 * 1000));
+      }
+    }
+    const tempoMedioTotalMin = durations.length > 0 ? durations.reduce((a, b) => a + b, 0) / durations.length : 0;
+
+    // Processar chats para métricas por fase
     let totalInsultos = 0;
     let totalDesistencia = 0;
     const phaseMap = new Map<
@@ -334,12 +332,9 @@ export class JobsService {
     let totalMensagens = 0;
     let fasesComMensagens = 0;
 
-    const chatsSnap = await this.firestore.collection(CHATS_COLLECTION).limit(MAX_CHATS_ANALYTICS).get();
-
     for (const doc of chatsSnap.docs) {
       const data = doc.data() as Chat;
-      const chatUpdated = toTimestampMs(data.lastUpdated ?? data.createdAt);
-      if (startMs != null && chatUpdated != null && chatUpdated < startMs) continue;
+      // gameId ainda precisa filtrar em memória (campo aninhado lastMessage.gameType)
       if (gameId != null && gameId.trim() !== '') {
         const g = extractGameType(data);
         if (g !== gameId.trim()) continue;
