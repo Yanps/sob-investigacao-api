@@ -32,6 +32,14 @@ export class UsersController {
     });
   }
 
+  @Patch('change-phone')
+  async changePhone(@Body() dto: ChangePhoneDto) {
+    return this.usersService.changePhoneNumber(
+      dto.email,
+      dto.newPhoneNumber,
+    );
+  }
+
   @Get(':phoneNumber/games')
   async listGames(@Param('phoneNumber') phoneNumber: string) {
     return this.usersService.listUserGames(phoneNumber);
@@ -46,13 +54,5 @@ export class UsersController {
       );
     }
     return result;
-  }
-
-  @Patch('change-phone')
-  async changePhone(@Body() dto: ChangePhoneDto) {
-    return this.usersService.changePhoneNumber(
-      dto.email,
-      dto.newPhoneNumber,
-    );
   }
 }
