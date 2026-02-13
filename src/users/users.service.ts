@@ -268,47 +268,68 @@ export class UsersService {
       );
     }
 
-    const normalizedOld = oldPhoneNumber.toString().trim();
+    // Normaliza para string e número (banco pode ter em qualquer formato)
+    const normalizedOldStr = oldPhoneNumber.toString().trim();
+    const normalizedOldDigits = normalizedOldStr.replace(/\D/g, '');
+    const normalizedOldNum = parseInt(normalizedOldDigits, 10);
+
+    const normalizedNewDigits = normalizedNew.replace(/\D/g, '');
+    const normalizedNewNum = parseInt(normalizedNewDigits, 10);
 
     // Validação básica
-    if (normalizedOld === normalizedNew) {
+    if (normalizedOldDigits === normalizedNewDigits) {
       throw new BadRequestException(
         'O telefone novo não pode ser igual ao telefone atual',
       );
     }
 
     // 2. Busca o customer na collection 'customers' usando o phoneNumber
-    const customerSnap = await this.firestore
-      .collection('customers')
-      .where('phoneNumber', '==', normalizedOld)
-      .limit(1)
-      .get();
+    // Busca como número e como string para cobrir ambos os casos
+    const [customerSnapNum, customerSnapStr] = await Promise.all([
+      this.firestore
+        .collection('customers')
+        .where('phoneNumber', '==', normalizedOldNum)
+        .limit(1)
+        .get(),
+      this.firestore
+        .collection('customers')
+        .where('phoneNumber', '==', normalizedOldDigits)
+        .limit(1)
+        .get(),
+    ]);
 
-    if (customerSnap.empty) {
+    const customerDoc = customerSnapNum.docs[0] ?? customerSnapStr.docs[0];
+
+    if (!customerDoc) {
       throw new NotFoundException(
-        `Customer não encontrado para o telefone: ${normalizedOld}`,
+        `Customer não encontrado para o telefone: ${normalizedOldStr}`,
       );
     }
 
-    const customerDoc = customerSnap.docs[0];
+    // Verifica se já existe customer no telefone novo (busca como número e string)
+    const [existingCustomerSnapNum, existingCustomerSnapStr] = await Promise.all([
+      this.firestore
+        .collection('customers')
+        .where('phoneNumber', '==', normalizedNewNum)
+        .limit(1)
+        .get(),
+      this.firestore
+        .collection('customers')
+        .where('phoneNumber', '==', normalizedNewDigits)
+        .limit(1)
+        .get(),
+    ]);
 
-    // Verifica se já existe customer no telefone novo
-    const existingCustomerSnap = await this.firestore
-      .collection('customers')
-      .where('phoneNumber', '==', normalizedNew)
-      .limit(1)
-      .get();
-
-    if (!existingCustomerSnap.empty) {
+    if (!existingCustomerSnapNum.empty || !existingCustomerSnapStr.empty) {
       throw new ConflictException(
         `Já existe um customer com o telefone: ${normalizedNew}`,
       );
     }
 
-    // Verifica se já existe chat no telefone novo
+    // Verifica se já existe chat no telefone novo (chats usam string como doc id)
     const existingChatSnap = await this.firestore
       .collection('chats')
-      .doc(normalizedNew)
+      .doc(normalizedNewDigits)
       .get();
 
     if (existingChatSnap.exists) {
@@ -320,7 +341,7 @@ export class UsersService {
     // Busca o chat no telefone antigo
     const oldChatSnap = await this.firestore
       .collection('chats')
-      .doc(normalizedOld)
+      .doc(normalizedOldDigits)
       .get();
 
     // Prepara o batch write para operações atômicas
@@ -332,8 +353,8 @@ export class UsersService {
       .doc(customerDoc.id);
 
     batch.update(customerRef, {
-      phoneNumber: normalizedNew,
-      phoneNumberAlt: normalizedOld,
+      phoneNumber: normalizedNewNum,
+      phoneNumberAlt: normalizedOldNum,
     });
 
     // 4. Atualiza o order com o novo phoneNumber
@@ -342,8 +363,8 @@ export class UsersService {
       .doc(orderSnap.docs[0].id);
 
     batch.update(orderRef, {
-      phoneNumber: normalizedNew,
-      phoneNumberAlt: normalizedOld,
+      phoneNumber: normalizedNewNum,
+      phoneNumberAlt: normalizedOldNum,
     });
 
     // 5. Se existe chat, migra para o novo telefone
@@ -355,14 +376,14 @@ export class UsersService {
         // Cria o chat no novo telefone preservando toda a estrutura
         const newChatRef = this.firestore
           .collection('chats')
-          .doc(normalizedNew);
+          .doc(normalizedNewDigits);
 
         batch.set(newChatRef, chatData);
 
         // Deleta o chat antigo
         const oldChatRef = this.firestore
           .collection('chats')
-          .doc(normalizedOld);
+          .doc(normalizedOldDigits);
 
         batch.delete(oldChatRef);
       }
@@ -373,7 +394,7 @@ export class UsersService {
 
     return {
       success: true,
-      message: `Telefone migrado com sucesso de ${normalizedOld} para ${normalizedNew}`,
+      message: `Telefone migrado com sucesso de ${normalizedOldDigits} para ${normalizedNewDigits}`,
     };
   }
 }
