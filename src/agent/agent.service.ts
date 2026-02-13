@@ -260,44 +260,31 @@ export class AgentService {
     conversationId: string,
     params?: { limit?: number },
   ): Promise<{ conversation: Conversation & { id: string }; messages: (AgentResponse & { id: string })[] }> {
-    console.log('[getConversationMessages] conversationId:', conversationId, 'params:', JSON.stringify(params));
-    try {
-      const conversation = await this.getConversationById(conversationId);
-      console.log('[getConversationMessages] conversation found:', conversation ? 'yes' : 'no');
-      if (!conversation) {
-        throw new NotFoundException(`Conversation ${conversationId} not found`);
-      }
-      console.log('[getConversationMessages] phoneNumber:', conversation.phoneNumber);
-
-      const limit = Math.min(Math.max(params?.limit ?? 50, 1), 100);
-      console.log('[getConversationMessages] querying responses with limit:', limit);
-
-      const snapshot = await this.firestore
-        .collection(RESPONSES_COLLECTION)
-        .where('phoneNumber', '==', conversation.phoneNumber)
-        .orderBy('createdAt', 'desc')
-        .limit(limit)
-        .get();
-      console.log('[getConversationMessages] responses found:', snapshot.docs.length);
-
-      const messages = snapshot.docs.map((doc) => {
-        const d = doc.data();
-        return {
-          id: doc.id,
-          traceId: d.traceId,
-          phoneNumber: d.phoneNumber,
-          question: d.question,
-          response: d.response,
-          createdAt: d.createdAt,
-          source: d.source ?? 'vertex-ai',
-        };
-      });
-
-      console.log('[getConversationMessages] returning', messages.length, 'messages');
-      return { conversation, messages };
-    } catch (error) {
-      console.error('[getConversationMessages] ERROR:', error);
-      throw error;
+    const conversation = await this.getConversationById(conversationId);
+    if (!conversation) {
+      throw new NotFoundException(`Conversation ${conversationId} not found`);
     }
+    const limit = Math.min(Math.max(params?.limit ?? 50, 1), 100);
+    const snapshot = await this.firestore
+      .collection(RESPONSES_COLLECTION)
+      .where('phoneNumber', '==', conversation.phoneNumber)
+      .orderBy('createdAt', 'desc')
+      .limit(limit)
+      .get();
+
+    const messages = snapshot.docs.map((doc) => {
+      const d = doc.data();
+      return {
+        id: doc.id,
+        traceId: d.traceId,
+        phoneNumber: d.phoneNumber,
+        question: d.question,
+        response: d.response,
+        createdAt: d.createdAt,
+        source: d.source ?? 'vertex-ai',
+      };
+    });
+
+    return { conversation, messages };
   }
 }
