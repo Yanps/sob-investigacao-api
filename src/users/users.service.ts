@@ -67,14 +67,28 @@ export class UsersService {
       };
     }
 
+    // Se busca por phoneNumber, não usa orderBy para evitar necessidade de índice composto
+    // (busca por phoneNumber geralmente retorna apenas 1 resultado)
+    if (params.phoneNumber?.trim()) {
+      const phoneQuery = this.firestore
+        .collection('customers')
+        .where('phoneNumber', '==', params.phoneNumber.trim())
+        .limit(limit + 1);
+
+      const snapshot = await phoneQuery.get();
+      const docs = snapshot.docs.slice(0, limit);
+      const customers = docs.map((doc) => ({
+        id: doc.id,
+        ...(doc.data() as Customer),
+      }));
+      return { customers };
+    }
+
     let query = this.firestore
       .collection('customers')
       .orderBy('createdAt', 'desc')
       .limit(limit + 1);
 
-    if (params.phoneNumber?.trim()) {
-      query = query.where('phoneNumber', '==', params.phoneNumber.trim());
-    }
     if (params.startAfter) {
       const cursor = await this.firestore
         .collection('customers')
