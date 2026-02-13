@@ -43,6 +43,11 @@ export class CodesController {
     });
   }
 
+  @Get('batches')
+  async listBatches() {
+    return this.codesService.listBatches();
+  }
+
   @Get(':code')
   async getByCode(@Param('code') code: string) {
     const result = await this.codesService.getByCode(code);

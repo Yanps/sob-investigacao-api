@@ -153,6 +153,26 @@ export class CodesService {
     return { codes, nextCursor };
   }
 
+  async listBatches(): Promise<{
+    batches: { batchId: string; count: number }[];
+  }> {
+    const snapshot = await this.firestore.collection(COLLECTION).get();
+
+    const batchCounts = new Map<string, number>();
+    for (const doc of snapshot.docs) {
+      const batchId = doc.data().batchId;
+      if (batchId) {
+        batchCounts.set(batchId, (batchCounts.get(batchId) || 0) + 1);
+      }
+    }
+
+    const batches = Array.from(batchCounts.entries())
+      .map(([batchId, count]) => ({ batchId, count }))
+      .sort((a, b) => b.count - a.count);
+
+    return { batches };
+  }
+
   async getByCode(code: string): Promise<{
     id: string;
     code: string;
