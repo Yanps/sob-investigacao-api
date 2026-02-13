@@ -3,6 +3,7 @@ import { JobsService } from './jobs.service';
 import { JobsStatsQueryDto } from './dto/jobs-stats-query.dto';
 import { JobsAnalyticsQueryDto } from './dto/jobs-analytics-query.dto';
 import { PhaseAnalysisDto } from './dto/phase-analysis.dto';
+import { Public } from '../common/decorators/public.decorator';
 
 @Controller('jobs')
 export class JobsController {
@@ -69,6 +70,12 @@ export class JobsController {
       period: query.period,
       gameId: query.gameId,
     });
+  }
+
+  @Public()
+  @Get('debug/chat-fields')
+  async debugChatFields(@Query('limit') limitParam?: string) {
+    return this.jobsService.debugChatFields(parseInt(limitParam ?? '5', 10));
   }
 
   @Get(':jobId')

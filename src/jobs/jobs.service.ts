@@ -35,18 +35,44 @@ function extractGameType(chat: Chat): string | undefined {
   return undefined;
 }
 
+/** Extrai phaseId/phaseName de uma mensagem, verificando campos alternativos */
+function extractPhaseFromMessage(msg: Record<string, unknown>): { phaseId?: string; phaseName?: string } {
+  // Campos possíveis para o ID da fase
+  const phaseId = msg.phaseId ?? msg.phase_id ?? msg.phase ?? msg.fase ?? msg.currentPhase ?? msg.current_phase;
+  // Campos possíveis para o nome da fase
+  const phaseName = msg.phaseName ?? msg.phase_name ?? msg.faseName ?? msg.fase_name ?? msg.phase ?? msg.fase;
+
+  return {
+    phaseId: typeof phaseId === 'string' ? phaseId : undefined,
+    phaseName: typeof phaseName === 'string' ? phaseName : undefined,
+  };
+}
+
 function getMessagesFromChat(chat: Chat): Array<{ hasDirtyWord?: boolean; hasGiveup?: boolean; phaseId?: string; phaseName?: string }> {
+  // Extrai fase do lastMessage como fallback (quando mensagens no array não têm fase)
+  let fallbackPhase: { phaseId?: string; phaseName?: string } = {};
+  if (chat.lastMessage) {
+    fallbackPhase = extractPhaseFromMessage(chat.lastMessage as unknown as Record<string, unknown>);
+  }
+
   if (chat.messages && chat.messages.length > 0) {
-    return chat.messages.map((m) => ({
-      hasDirtyWord: (m as MessageInArray).hasDirtyWord,
-      hasGiveup: (m as MessageInArray).hasGiveup,
-      phaseId: (m as MessageInArray).phaseId,
-      phaseName: (m as MessageInArray).phaseName,
-    }));
+    return chat.messages.map((m) => {
+      const msgObj = m as unknown as Record<string, unknown>;
+      const phase = extractPhaseFromMessage(msgObj);
+      // Usa a fase do lastMessage como fallback se a mensagem não tiver fase
+      const effectivePhaseId = phase.phaseId ?? fallbackPhase.phaseId;
+      const effectivePhaseName = phase.phaseName ?? fallbackPhase.phaseName;
+      return {
+        hasDirtyWord: (m as MessageInArray).hasDirtyWord,
+        hasGiveup: (m as MessageInArray).hasGiveup,
+        phaseId: effectivePhaseId,
+        phaseName: effectivePhaseName,
+      };
+    });
   }
   if (chat.lastMessage) {
     const lm = chat.lastMessage as ChatMessage;
-    return [{ hasDirtyWord: lm.hasDirtyWord, hasGiveup: lm.hasGiveup, phaseId: lm.phaseId, phaseName: lm.phaseName }];
+    return [{ hasDirtyWord: lm.hasDirtyWord, hasGiveup: lm.hasGiveup, phaseId: fallbackPhase.phaseId, phaseName: fallbackPhase.phaseName }];
   }
   return [];
 }
@@ -54,12 +80,23 @@ function getMessagesFromChat(chat: Chat): Array<{ hasDirtyWord?: boolean; hasGiv
 /** Mensagens com timestamp (ms) e fase para cálculo de duração por fase. */
 function getMessagesWithTimestampAndPhase(chat: Chat): Array<{ phaseKey: string; phaseName: string; tsMs: number }> {
   const out: Array<{ phaseKey: string; phaseName: string; tsMs: number }> = [];
+
+  // Extrai fase do lastMessage como fallback
+  let fallbackPhase: { phaseId?: string; phaseName?: string } = {};
+  if (chat.lastMessage) {
+    fallbackPhase = extractPhaseFromMessage(chat.lastMessage as unknown as Record<string, unknown>);
+  }
+
   if (chat.messages && chat.messages.length > 0) {
     for (const m of chat.messages as MessageInArray[]) {
       const ts = toTimestampMs(m.timestamp);
       if (ts == null) continue;
-      const phaseKey = m.phaseId ?? m.phaseName ?? '_sem_fase_';
-      const phaseName = m.phaseName ?? m.phaseId ?? 'Sem fase';
+      const phase = extractPhaseFromMessage(m as unknown as Record<string, unknown>);
+      // Usa a fase do lastMessage como fallback
+      const effectivePhaseId = phase.phaseId ?? fallbackPhase.phaseId;
+      const effectivePhaseName = phase.phaseName ?? fallbackPhase.phaseName;
+      const phaseKey = effectivePhaseId ?? effectivePhaseName ?? '_sem_fase_';
+      const phaseName = effectivePhaseName ?? effectivePhaseId ?? 'Sem fase';
       out.push({ phaseKey, phaseName, tsMs: ts });
     }
     return out;
@@ -68,8 +105,8 @@ function getMessagesWithTimestampAndPhase(chat: Chat): Array<{ phaseKey: string;
     const lm = chat.lastMessage as ChatMessage;
     const ts = toTimestampMs(lm.timestamp ?? lm.createdAt ?? lm.lastUpdated);
     if (ts != null) {
-      const phaseKey = lm.phaseId ?? lm.phaseName ?? '_sem_fase_';
-      const phaseName = lm.phaseName ?? lm.phaseId ?? 'Sem fase';
+      const phaseKey = fallbackPhase.phaseId ?? fallbackPhase.phaseName ?? '_sem_fase_';
+      const phaseName = fallbackPhase.phaseName ?? fallbackPhase.phaseId ?? 'Sem fase';
       out.push({ phaseKey, phaseName, tsMs: ts });
     }
   }
@@ -79,12 +116,23 @@ function getMessagesWithTimestampAndPhase(chat: Chat): Array<{ phaseKey: string;
 /** Mensagens com texto e fase para palavras mais usadas. */
 function getMessagesWithBodyAndPhase(chat: Chat): Array<{ phaseKey: string; phaseName: string; msgBody: string }> {
   const out: Array<{ phaseKey: string; phaseName: string; msgBody: string }> = [];
+
+  // Extrai fase do lastMessage como fallback
+  let fallbackPhase: { phaseId?: string; phaseName?: string } = {};
+  if (chat.lastMessage) {
+    fallbackPhase = extractPhaseFromMessage(chat.lastMessage as unknown as Record<string, unknown>);
+  }
+
   if (chat.messages && chat.messages.length > 0) {
     for (const m of chat.messages as MessageInArray[]) {
       const body = typeof m.msgBody === 'string' ? m.msgBody.trim() : '';
       if (!body) continue;
-      const phaseKey = m.phaseId ?? m.phaseName ?? '_sem_fase_';
-      const phaseName = m.phaseName ?? m.phaseId ?? 'Sem fase';
+      const phase = extractPhaseFromMessage(m as unknown as Record<string, unknown>);
+      // Usa a fase do lastMessage como fallback
+      const effectivePhaseId = phase.phaseId ?? fallbackPhase.phaseId;
+      const effectivePhaseName = phase.phaseName ?? fallbackPhase.phaseName;
+      const phaseKey = effectivePhaseId ?? effectivePhaseName ?? '_sem_fase_';
+      const phaseName = effectivePhaseName ?? effectivePhaseId ?? 'Sem fase';
       out.push({ phaseKey, phaseName, msgBody: body });
     }
     return out;
@@ -93,8 +141,8 @@ function getMessagesWithBodyAndPhase(chat: Chat): Array<{ phaseKey: string; phas
     const lm = chat.lastMessage as ChatMessage;
     const body = typeof lm.msgBody === 'string' ? lm.msgBody.trim() : '';
     if (body) {
-      const phaseKey = lm.phaseId ?? lm.phaseName ?? '_sem_fase_';
-      const phaseName = lm.phaseName ?? lm.phaseId ?? 'Sem fase';
+      const phaseKey = fallbackPhase.phaseId ?? fallbackPhase.phaseName ?? '_sem_fase_';
+      const phaseName = fallbackPhase.phaseName ?? fallbackPhase.phaseId ?? 'Sem fase';
       out.push({ phaseKey, phaseName, msgBody: body });
     }
   }
@@ -530,5 +578,97 @@ export class JobsService {
     if (body.topWords !== undefined) data.topWords = body.topWords;
     await ref.set(data, { merge: true });
     return { id, generatedAt: now };
+  }
+
+  /**
+   * Debug: retorna os campos reais das mensagens nos chats para identificar nomes de campos de fase.
+   */
+  async debugChatFields(limit: number = 5): Promise<{
+    chatsAnalyzed: number;
+    sampleMessages: Array<{
+      chatId: string;
+      messageIndex: number;
+      allFields: string[];
+      phaseRelatedFields: Record<string, unknown>;
+    }>;
+    uniqueFieldsFound: string[];
+    phaseFieldsDistribution: Record<string, number>;
+  }> {
+    const snapshot = await this.firestore
+      .collection(CHATS_COLLECTION)
+      .limit(Math.min(limit, 20))
+      .get();
+
+    const sampleMessages: Array<{
+      chatId: string;
+      messageIndex: number;
+      allFields: string[];
+      phaseRelatedFields: Record<string, unknown>;
+    }> = [];
+
+    const allFieldsSet = new Set<string>();
+    const phaseFieldsDistribution: Record<string, number> = {};
+
+    for (const doc of snapshot.docs) {
+      const chat = doc.data() as Chat;
+
+      // Analisa messages array
+      if (chat.messages && chat.messages.length > 0) {
+        for (let i = 0; i < Math.min(chat.messages.length, 3); i++) {
+          const msg = chat.messages[i] as unknown as Record<string, unknown>;
+          const fields = Object.keys(msg);
+          fields.forEach((f) => allFieldsSet.add(f));
+
+          // Campos relacionados à fase
+          const phaseRelatedFields: Record<string, unknown> = {};
+          const phaseKeywords = ['phase', 'fase', 'step', 'etapa', 'stage', 'current'];
+          for (const field of fields) {
+            const lowerField = field.toLowerCase();
+            if (phaseKeywords.some((kw) => lowerField.includes(kw))) {
+              phaseRelatedFields[field] = msg[field];
+              phaseFieldsDistribution[field] = (phaseFieldsDistribution[field] ?? 0) + 1;
+            }
+          }
+
+          sampleMessages.push({
+            chatId: doc.id,
+            messageIndex: i,
+            allFields: fields,
+            phaseRelatedFields,
+          });
+        }
+      }
+
+      // Analisa lastMessage
+      if (chat.lastMessage) {
+        const msg = chat.lastMessage as unknown as Record<string, unknown>;
+        const fields = Object.keys(msg);
+        fields.forEach((f) => allFieldsSet.add(f));
+
+        const phaseRelatedFields: Record<string, unknown> = {};
+        const phaseKeywords = ['phase', 'fase', 'step', 'etapa', 'stage', 'current'];
+        for (const field of fields) {
+          const lowerField = field.toLowerCase();
+          if (phaseKeywords.some((kw) => lowerField.includes(kw))) {
+            phaseRelatedFields[field] = msg[field];
+            phaseFieldsDistribution[field] = (phaseFieldsDistribution[field] ?? 0) + 1;
+          }
+        }
+
+        sampleMessages.push({
+          chatId: doc.id,
+          messageIndex: -1, // -1 indica lastMessage
+          allFields: fields,
+          phaseRelatedFields,
+        });
+      }
+    }
+
+    return {
+      chatsAnalyzed: snapshot.docs.length,
+      sampleMessages: sampleMessages.slice(0, 20),
+      uniqueFieldsFound: Array.from(allFieldsSet).sort(),
+      phaseFieldsDistribution,
+    };
   }
 }
