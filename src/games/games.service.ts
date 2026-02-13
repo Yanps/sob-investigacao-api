@@ -5,7 +5,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { Inject } from '@nestjs/common';
-import { Firestore } from 'firebase-admin/firestore';
+import { Firestore, Timestamp } from 'firebase-admin/firestore';
 import { FieldValue } from 'firebase-admin/firestore';
 import { FIRESTORE } from '../infra/firebase/firebase.provider';
 import type { Game } from '../shared/types/game.schema';
@@ -15,6 +15,37 @@ import type { UpdateGameDto } from './dto/update-game.dto';
 const GAMES_COLLECTION = 'games';
 const ORDERS_COLLECTION = 'orders';
 const CHATS_COLLECTION = 'chats';
+
+interface GameResponse {
+  id: string;
+  name: string;
+  type: string;
+  prompts?: Record<string, unknown>;
+  config?: Record<string, unknown>;
+  active: boolean;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+function toISOString(value: unknown): string | undefined {
+  if (value instanceof Timestamp) return value.toDate().toISOString();
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'string') return value;
+  return undefined;
+}
+
+function toGameResponse(id: string, data: Game): GameResponse {
+  return {
+    id,
+    name: data.name,
+    type: data.type,
+    prompts: data.prompts,
+    config: data.config,
+    active: data.active,
+    createdAt: toISOString(data.createdAt) ?? new Date().toISOString(),
+    updatedAt: toISOString(data.updatedAt),
+  };
+}
 
 function normalizePhone(raw: string): string {
   const digits = String(raw).replace(/\D/g, '');
@@ -34,7 +65,7 @@ export class GamesService {
     type?: string;
     limit?: number;
     startAfter?: string;
-  }): Promise<{ games: (Game & { id: string })[]; nextCursor?: string }> {
+  }): Promise<{ games: GameResponse[]; nextCursor?: string }> {
     const limit = Math.min(Math.max(params?.limit ?? 50, 1), 100);
     let query = this.firestore
       .collection(GAMES_COLLECTION)
@@ -57,22 +88,19 @@ export class GamesService {
 
     const snapshot = await query.get();
     const docs = snapshot.docs.slice(0, limit);
-    const games = docs.map((d) => ({
-      id: d.id,
-      ...(d.data() as Game),
-    }));
+    const games = docs.map((d) => toGameResponse(d.id, d.data() as Game));
     const nextCursor =
       snapshot.docs.length > limit ? snapshot.docs[limit - 1]?.id : undefined;
     return { games, nextCursor };
   }
 
-  async getById(gameId: string): Promise<(Game & { id: string }) | null> {
+  async getById(gameId: string): Promise<GameResponse | null> {
     const doc = await this.firestore.collection(GAMES_COLLECTION).doc(gameId).get();
     if (!doc.exists) return null;
-    return { id: doc.id, ...(doc.data() as Game) };
+    return toGameResponse(doc.id, doc.data() as Game);
   }
 
-  async create(dto: CreateGameDto): Promise<Game & { id: string }> {
+  async create(dto: CreateGameDto): Promise<GameResponse> {
     const now = FieldValue.serverTimestamp();
     const ref = await this.firestore.collection(GAMES_COLLECTION).add({
       name: dto.name,
@@ -84,13 +112,13 @@ export class GamesService {
       updatedAt: now,
     });
     const snap = await ref.get();
-    return { id: snap.id, ...(snap.data() as Game) };
+    return toGameResponse(snap.id, snap.data() as Game);
   }
 
   async update(
     gameId: string,
     dto: UpdateGameDto,
-  ): Promise<Game & { id: string }> {
+  ): Promise<GameResponse> {
     const ref = this.firestore.collection(GAMES_COLLECTION).doc(gameId);
     const snap = await ref.get();
     if (!snap.exists) {
@@ -106,7 +134,7 @@ export class GamesService {
     if (dto.active !== undefined) updates.active = dto.active;
     await ref.update(updates);
     const updated = await ref.get();
-    return { id: updated.id, ...(updated.data() as Game) };
+    return toGameResponse(updated.id, updated.data() as Game);
   }
 
   async delete(gameId: string): Promise<void> {
