@@ -2,6 +2,7 @@ import {
   Injectable,
   BadRequestException,
   NotFoundException,
+  Logger,
 } from '@nestjs/common';
 import { Inject } from '@nestjs/common';
 import { Firestore } from 'firebase-admin/firestore';
@@ -35,13 +36,15 @@ function generateCode(): string {
 
 @Injectable()
 export class CodesService {
+  private readonly logger = new Logger(CodesService.name);
+
   constructor(
     @Inject(FIRESTORE)
     private readonly firestore: Firestore,
   ) {}
 
   async generate(params: {
-    gameId?: string;
+    productId: string;
     quantity: number;
     batchId?: string;
   }): Promise<{ codes: string[]; batchId: string }> {
@@ -52,10 +55,14 @@ export class CodesService {
       );
     }
 
+    const productId = params.productId?.trim();
+    if (!productId) {
+      throw new BadRequestException('productId é obrigatório');
+    }
+
     const batchId =
       params.batchId?.trim() ||
       `batch_${Date.now()}_${randomBytes(4).toString('hex')}`;
-    const gameId = params.gameId?.trim() || null;
 
     const codes: string[] = [];
     const seen = new Set<string>();
@@ -92,7 +99,7 @@ export class CodesService {
         code,
         used: false,
         batchId,
-        ...(gameId && { gameId }),
+        productId,
         createdAt: now,
       });
     }
@@ -110,47 +117,59 @@ export class CodesService {
     codes: { id: string; code: string; used: boolean; usedAt?: unknown; usedByPhoneNumber?: string; batchId?: string; gameId?: string; createdAt?: unknown }[];
     nextCursor?: string;
   }> {
+    this.logger.log(`list() called with params: ${JSON.stringify(params)}`);
     const limit = Math.min(Math.max(params.limit ?? 20, 1), 100);
 
-    let query = this.firestore
-      .collection(COLLECTION)
-      .orderBy('createdAt', 'desc')
-      .limit(limit + 1);
-
-    if (params.batchId?.trim()) {
-      query = query.where('batchId', '==', params.batchId.trim());
-    }
-    if (params.used !== undefined) {
-      query = query.where('used', '==', params.used);
-    }
-    if (params.startAfter) {
-      const cursor = await this.firestore
+    try {
+      let query = this.firestore
         .collection(COLLECTION)
-        .doc(params.startAfter)
-        .get();
-      if (cursor.exists) {
-        query = query.startAfter(cursor);
-      }
-    }
+        .orderBy('createdAt', 'desc')
+        .limit(limit + 1);
 
-    const snapshot = await query.get();
-    const docs = snapshot.docs.slice(0, limit);
-    const codes = docs.map((doc) => {
-      const d = doc.data();
-      return {
-        id: doc.id,
-        code: d.code,
-        used: d.used === true,
-        usedAt: d.usedAt,
-        usedByPhoneNumber: d.usedByPhoneNumber,
-        batchId: d.batchId,
-        gameId: d.gameId,
-        createdAt: d.createdAt,
-      };
-    });
-    const nextCursor =
-      snapshot.docs.length > limit ? snapshot.docs[limit - 1]?.id : undefined;
-    return { codes, nextCursor };
+      if (params.batchId?.trim()) {
+        query = query.where('batchId', '==', params.batchId.trim());
+      }
+      if (params.used !== undefined) {
+        query = query.where('used', '==', params.used);
+      }
+      if (params.startAfter) {
+        const cursor = await this.firestore
+          .collection(COLLECTION)
+          .doc(params.startAfter)
+          .get();
+        if (cursor.exists) {
+          query = query.startAfter(cursor);
+        }
+      }
+
+      this.logger.log('Executing Firestore query...');
+      const snapshot = await query.get();
+      this.logger.log(`Query returned ${snapshot.docs.length} documents`);
+
+      const docs = snapshot.docs.slice(0, limit);
+      const codes = docs.map((doc) => {
+        const d = doc.data();
+        return {
+          id: doc.id,
+          code: d.code,
+          used: d.used === true,
+          usedAt: d.usedAt,
+          usedByPhoneNumber: d.usedByPhoneNumber,
+          usedByName: d.usedByName,
+          usedByEmail: d.usedByEmail,
+          channel: d.channel,
+          batchId: d.batchId,
+          productId: d.productId,
+          createdAt: d.createdAt,
+        };
+      });
+      const nextCursor =
+        snapshot.docs.length > limit ? snapshot.docs[limit - 1]?.id : undefined;
+      return { codes, nextCursor };
+    } catch (error) {
+      this.logger.error(`Error in list(): ${error.message}`, error.stack);
+      throw error;
+    }
   }
 
   async listBatches(): Promise<{
@@ -179,8 +198,11 @@ export class CodesService {
     used: boolean;
     usedAt?: unknown;
     usedByPhoneNumber?: string;
+    usedByName?: string;
+    usedByEmail?: string;
+    channel?: string;
     batchId?: string;
-    gameId?: string;
+    productId?: string;
     createdAt?: unknown;
   } | null> {
     const normalized = String(code).trim().toUpperCase();
@@ -199,8 +221,11 @@ export class CodesService {
       used: d.used === true,
       usedAt: d.usedAt,
       usedByPhoneNumber: d.usedByPhoneNumber,
+      usedByName: d.usedByName,
+      usedByEmail: d.usedByEmail,
+      channel: d.channel,
       batchId: d.batchId,
-      gameId: d.gameId,
+      productId: d.productId,
       createdAt: d.createdAt,
     };
   }

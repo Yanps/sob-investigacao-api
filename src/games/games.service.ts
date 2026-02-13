@@ -20,6 +20,7 @@ interface GameResponse {
   id: string;
   name: string;
   type: string;
+  productId?: string;
   prompts?: Record<string, unknown>;
   config?: Record<string, unknown>;
   active: boolean;
@@ -39,6 +40,7 @@ function toGameResponse(id: string, data: Game): GameResponse {
     id,
     name: data.name,
     type: data.type,
+    productId: data.productId,
     prompts: data.prompts,
     config: data.config,
     active: data.active,
@@ -105,6 +107,7 @@ export class GamesService {
     const ref = await this.firestore.collection(GAMES_COLLECTION).add({
       name: dto.name,
       type: dto.type ?? 'default',
+      productId: dto.productId,
       prompts: dto.prompts ?? {},
       config: dto.config ?? {},
       active: true,
@@ -129,6 +132,7 @@ export class GamesService {
     };
     if (dto.name !== undefined) updates.name = dto.name;
     if (dto.type !== undefined) updates.type = dto.type;
+    if (dto.productId !== undefined) updates.productId = dto.productId;
     if (dto.prompts !== undefined) updates.prompts = dto.prompts;
     if (dto.config !== undefined) updates.config = dto.config;
     if (dto.active !== undefined) updates.active = dto.active;

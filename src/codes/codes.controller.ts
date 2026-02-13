@@ -17,7 +17,7 @@ export class CodesController {
   @Post('generate')
   async generate(@Body() dto: GenerateCodesDto) {
     return this.codesService.generate({
-      gameId: dto.gameId,
+      productId: dto.productId,
       quantity: dto.quantity ?? 1,
       batchId: dto.batchId,
     });
