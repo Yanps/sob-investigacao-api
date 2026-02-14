@@ -8,6 +8,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
+import { Public } from '../common/decorators/public.decorator';
 import { ChangePhoneDto } from './dto/change-phone.dto';
 
 @Controller('users')
@@ -46,6 +47,7 @@ export class UsersController {
     return { name };
   }
 
+  @Public()
   @Get(':phoneNumber/games')
   async listGames(@Param('phoneNumber') phoneNumber: string) {
     return this.usersService.listUserGames(phoneNumber);
