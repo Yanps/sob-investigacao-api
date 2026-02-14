@@ -40,6 +40,12 @@ export class UsersController {
     );
   }
 
+  @Get(':phoneNumber/name')
+  async getCustomerName(@Param('phoneNumber') phoneNumber: string) {
+    const name = await this.usersService.getCustomerNameByPhone(phoneNumber);
+    return { name };
+  }
+
   @Get(':phoneNumber/games')
   async listGames(@Param('phoneNumber') phoneNumber: string) {
     return this.usersService.listUserGames(phoneNumber);
