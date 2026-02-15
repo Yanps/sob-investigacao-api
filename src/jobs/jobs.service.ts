@@ -9,6 +9,8 @@ import { Timestamp, DocumentSnapshot } from 'firebase-admin/firestore';
 const COLLECTION = 'processing_jobs';
 const CHATS_COLLECTION = 'chats';
 const PHASE_ANALYSES_COLLECTION = 'phase_analyses';
+const AGENT_RESPONSES_COLLECTION = 'agent_responses';
+const MAX_AGENT_RESPONSES_ANALYTICS = 5000;
 
 function phaseAnalysisDocId(gameId: string, phaseId: string): string {
   return `${String(gameId).replace(/\//g, '_')}_${String(phaseId).replace(/\//g, '_')}`;
@@ -33,6 +35,35 @@ function extractGameType(chat: Chat): string | undefined {
     return (last as MessageInArray).gameType;
   }
   return undefined;
+}
+
+/**
+ * Duração total (ms) do jogo a partir de chat.levels (setChatLevelInfo).
+ * levels.<gameType>.phases.<phaseId>.startAt / endAt.
+ */
+function getTotalDurationMsFromLevels(
+  data: Record<string, unknown>,
+  gameId?: string,
+): number {
+  const levels = data.levels as Record<
+    string,
+    { phases?: Record<string, { startAt?: unknown; endAt?: unknown }> }
+  > | undefined;
+  if (!levels || typeof levels !== 'object') return 0;
+  const gameKeys = gameId != null && gameId.trim() !== '' ? [gameId.trim()] : Object.keys(levels);
+  let totalMs = 0;
+  for (const g of gameKeys) {
+    const gameLevels = levels[g];
+    if (!gameLevels?.phases || typeof gameLevels.phases !== 'object') continue;
+    for (const phaseKey of Object.keys(gameLevels.phases)) {
+      const phase = gameLevels.phases[phaseKey];
+      if (!phase) continue;
+      const startMs = toTimestampMs(phase.startAt);
+      const endMs = toTimestampMs(phase.endAt);
+      if (startMs != null && endMs != null && endMs >= startMs) totalMs += endMs - startMs;
+    }
+  }
+  return totalMs;
 }
 
 /** Extrai phaseId/phaseName de uma mensagem, verificando campos alternativos */
@@ -281,8 +312,8 @@ export class JobsService {
   }
 
   /**
-   * Métricas para o Dashboard de Análise: job stats + tempo médio, insultos, desistência, mensagens por fase.
-   * Agrega de processing_jobs (tempo médio, contagens) e chats (insultos, desistência, mensagens por fase).
+   * Métricas para o Dashboard a partir de chats. Tempo médio: levels.<game>.phases.*.startAt/endAt.
+   * jobStats continua de processing_jobs; insultos, desistência e mensagens vêm de lastMessage/messages.
    */
   async getDashboardAnalytics(params: {
     period?: PeriodOption;
@@ -315,54 +346,25 @@ export class JobsService {
 
     const startTimestamp = startMs != null ? Timestamp.fromDate(new Date(startMs)) : null;
 
-    // Executar queries em paralelo para melhor performance
-    // Usar select() para trazer apenas campos necessários (reduz transferência de dados)
-    const [jobStats, doneJobsSnap, chatsSnap] = await Promise.all([
-      // 1. Stats dos jobs (usa count() internamente)
-      this.getStats(period),
-      // 2. Jobs done para calcular tempo médio - só precisa de startedAt e finishedAt
-      startTimestamp
-        ? this.firestore
-            .collection(COLLECTION)
-            .where('status', '==', 'done')
-            .where('createdAt', '>=', startTimestamp)
-            .select('startedAt', 'finishedAt')
-            .get()
-        : this.firestore
-            .collection(COLLECTION)
-            .where('status', '==', 'done')
-            .select('startedAt', 'finishedAt')
-            .limit(500)
-            .get(),
-      // 3. Chats para métricas de fases - só precisa de lastMessage, messages, lastUpdated
-      startTimestamp
-        ? this.firestore
-            .collection(CHATS_COLLECTION)
-            .where('lastUpdated', '>=', startTimestamp)
-            .orderBy('lastUpdated', 'desc')
-            .select('lastMessage', 'messages', 'lastUpdated', 'createdAt')
-            .limit(MAX_CHATS_ANALYTICS)
-            .get()
-        : this.firestore
-            .collection(CHATS_COLLECTION)
-            .select('lastMessage', 'messages', 'lastUpdated', 'createdAt')
-            .limit(MAX_CHATS_ANALYTICS)
-            .get(),
-    ]);
+    // Chats: tempo (levels), insultos, desistência, mensagens por fase
+    const chatsSnap = await (startTimestamp
+      ? this.firestore
+          .collection(CHATS_COLLECTION)
+          .where('lastUpdated', '>=', startTimestamp)
+          .orderBy('lastUpdated', 'desc')
+          .select('lastMessage', 'messages', 'lastUpdated', 'createdAt', 'levels')
+          .limit(MAX_CHATS_ANALYTICS)
+          .get()
+      : this.firestore
+          .collection(CHATS_COLLECTION)
+          .select('lastMessage', 'messages', 'lastUpdated', 'createdAt', 'levels')
+          .limit(MAX_CHATS_ANALYTICS)
+          .get());
 
-    // Tempo médio: jobs done no período, média (finishedAt - startedAt) em minutos
-    const durations: number[] = [];
-    for (const doc of doneJobsSnap.docs) {
-      const d = doc.data();
-      const started = toTimestampMs(d.startedAt);
-      const finished = toTimestampMs(d.finishedAt);
-      if (started != null && finished != null && finished >= started) {
-        durations.push((finished - started) / (60 * 1000));
-      }
-    }
-    const tempoMedioTotalMin = durations.length > 0 ? durations.reduce((a, b) => a + b, 0) / durations.length : 0;
+    const jobStats = await this.getStats(period);
+    const durationsMin: number[] = [];
 
-    // Processar chats para métricas por fase
+    // Processar chats para métricas por fase e tempo (levels)
     let totalInsultos = 0;
     let totalDesistencia = 0;
     const phaseMap = new Map<
@@ -382,11 +384,13 @@ export class JobsService {
 
     for (const doc of chatsSnap.docs) {
       const data = doc.data() as Chat;
-      // gameId ainda precisa filtrar em memória (campo aninhado lastMessage.gameType)
       if (gameId != null && gameId.trim() !== '') {
         const g = extractGameType(data);
         if (g !== gameId.trim()) continue;
       }
+      const totalMs = getTotalDurationMsFromLevels(data as unknown as Record<string, unknown>, gameId ?? undefined);
+      if (totalMs > 0) durationsMin.push(totalMs / (60 * 1000));
+
       const messages = getMessagesFromChat(data);
       for (const msg of messages) {
         const phaseKey = msg.phaseId ?? msg.phaseName ?? '_sem_fase_';
@@ -478,6 +482,9 @@ export class JobsService {
     }
     const mediaMensagensPorFase = fasesComMensagens > 0 ? totalMensagens / fasesComMensagens : 0;
 
+    const tempoMedioTotalMin =
+      durationsMin.length > 0 ? durationsMin.reduce((a, b) => a + b, 0) / durationsMin.length : 0;
+
     return {
       jobStats,
       tempoMedioTotalMin: Math.round(tempoMedioTotalMin * 10) / 10,
@@ -487,6 +494,196 @@ export class JobsService {
       porFase: phases,
       period: period ?? undefined,
       gameId: gameId?.trim() || undefined,
+    };
+  }
+
+  /**
+   * Métricas do summary a partir de agent_responses (gameId, phaseId, createdAt, hasOffense, hasDesistencia).
+   * Tempos: duração por (phoneNumber, phaseId); avgTotalTime por usuário.
+   * Ofensas/desistências/mensagens: contagem por fase a partir de hasOffense e hasDesistencia.
+   */
+  async getSummaryFromAgentResponses(params: {
+    period?: PeriodOption;
+    gameId?: string;
+  }): Promise<{
+    labels: string[];
+    avgTimesData: number[];
+    avgTotalTime: number;
+    phaseOffenses: number[];
+    phaseDesistencia: number[];
+    phaseMessages: number[];
+    totalInsultos: number;
+    totalDesistencia: number;
+  }> {
+    const { period, gameId } = params;
+    const now = Date.now();
+    let startMs: number | null = null;
+    if (period === '24h') startMs = now - 24 * 60 * 60 * 1000;
+    else if (period === '7d') startMs = now - 7 * 24 * 60 * 60 * 1000;
+    else if (period === '30d') startMs = now - 30 * 24 * 60 * 60 * 1000;
+    const startTimestamp = startMs != null ? Timestamp.fromDate(new Date(startMs)) : null;
+
+    const query = startTimestamp
+      ? this.firestore
+          .collection(AGENT_RESPONSES_COLLECTION)
+          .where('createdAt', '>=', startTimestamp)
+          .orderBy('createdAt', 'desc')
+          .limit(MAX_AGENT_RESPONSES_ANALYTICS)
+          .get()
+      : this.firestore
+          .collection(AGENT_RESPONSES_COLLECTION)
+          .orderBy('createdAt', 'desc')
+          .limit(MAX_AGENT_RESPONSES_ANALYTICS)
+          .get();
+
+    const snapshot = await query;
+    type Row = {
+      phoneNumber: string;
+      phaseId: number;
+      createdAtMs: number;
+      hasOffense: boolean;
+      hasDesistencia: boolean;
+    };
+    const rows: Row[] = [];
+    for (const doc of snapshot.docs) {
+      const d = doc.data();
+      const phone = d.phoneNumber != null ? String(d.phoneNumber) : '';
+      if (gameId != null && gameId.trim() !== '') {
+        const g = d.gameId != null ? String(d.gameId).trim() : '';
+        if (g !== gameId.trim()) continue;
+      }
+      const phaseId =
+        typeof d.phaseId === 'number'
+          ? d.phaseId
+          : typeof d.phaseId === 'string'
+            ? parseInt(d.phaseId, 10)
+            : NaN;
+      if (Number.isNaN(phaseId) || phaseId < 0) continue;
+      const createdAtMs = toTimestampMs(d.createdAt);
+      if (createdAtMs == null) continue;
+      const hasOffense = d.hasOffense === true;
+      const hasDesistencia = d.hasDesistencia === true;
+      rows.push({ phoneNumber: phone, phaseId, createdAtMs, hasOffense, hasDesistencia });
+    }
+
+    const byPhonePhase = new Map<string, number[]>();
+    const byPhoneAll = new Map<string, number[]>();
+    for (const r of rows) {
+      const key = `${r.phoneNumber}\t${r.phaseId}`;
+      if (!byPhonePhase.has(key)) byPhonePhase.set(key, []);
+      byPhonePhase.get(key)!.push(r.createdAtMs);
+      if (!byPhoneAll.has(r.phoneNumber)) byPhoneAll.set(r.phoneNumber, []);
+      byPhoneAll.get(r.phoneNumber)!.push(r.createdAtMs);
+    }
+
+    const phaseDurationsMs = new Map<number, number[]>();
+    for (const [key, timestamps] of byPhonePhase) {
+      if (timestamps.length === 0) continue;
+      const durationMs = Math.max(...timestamps) - Math.min(...timestamps);
+      const phaseId = parseInt(key.split('\t')[1], 10);
+      if (!phaseDurationsMs.has(phaseId)) phaseDurationsMs.set(phaseId, []);
+      phaseDurationsMs.get(phaseId)!.push(durationMs);
+    }
+
+    const phaseOffensesMap = new Map<number, number>();
+    const phaseDesistenciaMap = new Map<number, number>();
+    const phaseMessagesMap = new Map<number, number>();
+    for (const r of rows) {
+      phaseMessagesMap.set(r.phaseId, (phaseMessagesMap.get(r.phaseId) ?? 0) + 1);
+      if (r.hasOffense) phaseOffensesMap.set(r.phaseId, (phaseOffensesMap.get(r.phaseId) ?? 0) + 1);
+      if (r.hasDesistencia) phaseDesistenciaMap.set(r.phaseId, (phaseDesistenciaMap.get(r.phaseId) ?? 0) + 1);
+    }
+
+    const allPhaseIds = new Set<number>([
+      ...phaseDurationsMs.keys(),
+      ...phaseMessagesMap.keys(),
+    ]);
+    const phaseIds = Array.from(allPhaseIds).sort((a, b) => a - b);
+    const labels = phaseIds.map((p) => (p === 0 ? 'Fase 1' : `Fase ${p + 1}`));
+    const avgTimesData = phaseIds.map((phaseId) => {
+      const arr = phaseDurationsMs.get(phaseId) ?? [];
+      if (arr.length === 0) return 0;
+      const avgMs = arr.reduce((a, b) => a + b, 0) / arr.length;
+      return Math.round((avgMs / (60 * 1000)) * 10) / 10;
+    });
+    const phaseOffenses = phaseIds.map((id) => phaseOffensesMap.get(id) ?? 0);
+    const phaseDesistencia = phaseIds.map((id) => phaseDesistenciaMap.get(id) ?? 0);
+    const phaseMessages = phaseIds.map((id) => phaseMessagesMap.get(id) ?? 0);
+
+    const totalMsPerPhone = Array.from(byPhoneAll.entries()).map(([, timestamps]) =>
+      timestamps.length < 2 ? 0 : Math.max(...timestamps) - Math.min(...timestamps),
+    );
+    const avgTotalMs =
+      totalMsPerPhone.length > 0
+        ? totalMsPerPhone.reduce((a, b) => a + b, 0) / totalMsPerPhone.length
+        : 0;
+    const avgTotalTime = Math.round((avgTotalMs / (60 * 1000)) * 10) / 10;
+
+    return {
+      labels,
+      avgTimesData,
+      avgTotalTime,
+      phaseOffenses,
+      phaseDesistencia,
+      phaseMessages,
+      totalInsultos: phaseOffenses.reduce((a, b) => a + b, 0),
+      totalDesistencia: phaseDesistencia.reduce((a, b) => a + b, 0),
+    };
+  }
+
+  /**
+   * Dashboard summary: todas as métricas a partir de agent_responses (gameId, phaseId, hasOffense, hasDesistencia, createdAt).
+   */
+  async getDashboardSummary(params: {
+    period?: PeriodOption;
+    gameId?: string;
+  }): Promise<{
+    jobStats: { pending: number; processing: number; done: number; failed: number; period?: string };
+    tempoMedioTotalMin: number;
+    totalInsultos: number;
+    totalDesistencia: number;
+    mediaMensagensPorFase: number;
+    porFase: Array<{
+      phaseId: string;
+      phaseName: string;
+      totalInsultos: number;
+      totalDesistencia: number;
+      totalMensagens: number;
+      tempoMedioMin?: number;
+      topWords: Array<{ word: string; count: number }>;
+    }>;
+    period?: string;
+    gameId?: string;
+  }> {
+    const [summary, jobStats] = await Promise.all([
+      this.getSummaryFromAgentResponses(params),
+      this.getStats(params.period),
+    ]);
+
+    const porFase = summary.labels.map((label, idx) => ({
+      phaseId: `fase${idx + 1}`,
+      phaseName: label,
+      totalInsultos: summary.phaseOffenses[idx] ?? 0,
+      totalDesistencia: summary.phaseDesistencia[idx] ?? 0,
+      totalMensagens: summary.phaseMessages[idx] ?? 0,
+      tempoMedioMin: summary.avgTimesData[idx],
+      topWords: [] as Array<{ word: string; count: number }>,
+    }));
+
+    const fasesComMensagens = summary.phaseMessages.filter((n) => n > 0).length;
+    const totalMensagens = summary.phaseMessages.reduce((a, b) => a + b, 0);
+    const mediaMensagensPorFase =
+      fasesComMensagens > 0 ? totalMensagens / fasesComMensagens : 0;
+
+    return {
+      jobStats,
+      tempoMedioTotalMin: summary.avgTotalTime,
+      totalInsultos: summary.totalInsultos,
+      totalDesistencia: summary.totalDesistencia,
+      mediaMensagensPorFase: Math.round(mediaMensagensPorFase * 10) / 10,
+      porFase,
+      period: params.period ?? undefined,
+      gameId: params.gameId?.trim() || undefined,
     };
   }
 
