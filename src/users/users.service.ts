@@ -203,6 +203,50 @@ export class UsersService {
     };
   }
 
+  /**
+   * Retorna apenas o nome do customer pelo telefone.
+   * Busca na collection 'customers' por phoneNumber ou phoneNumberAlt.
+   */
+  async getCustomerNameByPhone(phoneNumber: string): Promise<string> {
+    const phoneDigits = phoneNumber.replace(/\D/g, '');
+    const phoneAsNumber = parseInt(phoneDigits, 10);
+
+    const [byPhoneNum, byPhoneStr, byAltNum, byAltStr] = await Promise.all([
+      this.firestore
+        .collection('customers')
+        .where('phoneNumber', '==', phoneAsNumber)
+        .limit(1)
+        .get(),
+      this.firestore
+        .collection('customers')
+        .where('phoneNumber', '==', phoneDigits)
+        .limit(1)
+        .get(),
+      this.firestore
+        .collection('customers')
+        .where('phoneNumberAlt', '==', phoneAsNumber)
+        .limit(1)
+        .get(),
+      this.firestore
+        .collection('customers')
+        .where('phoneNumberAlt', '==', phoneDigits)
+        .limit(1)
+        .get(),
+    ]);
+
+    const customerDoc =
+      byPhoneNum.docs[0] ?? byPhoneStr.docs[0] ?? byAltNum.docs[0] ?? byAltStr.docs[0];
+
+    if (!customerDoc) {
+      throw new NotFoundException(
+        `Customer não encontrado para o telefone: ${phoneNumber}`,
+      );
+    }
+
+    const data = customerDoc.data() as Customer;
+    return data.name;
+  }
+
   async listUserGames(phoneNumber: string): Promise<string[]> {
     const snap = await this.firestore
       .collection('chats')
