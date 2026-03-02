@@ -240,10 +240,9 @@ export class CodesService {
     try {
       this.logger.log(`Fetching all codes for batch: ${batchId}`);
 
-      let query = this.firestore
+      const query = this.firestore
         .collection(COLLECTION)
-        .where('batchId', '==', batchId.trim())
-        .orderBy('createdAt', 'asc');
+        .where('batchId', '==', batchId.trim());
 
       const snapshot = await query.get();
       this.logger.log(
