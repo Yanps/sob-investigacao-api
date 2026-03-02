@@ -21,6 +21,14 @@ export class WebhooksController {
 
   @Public()
   @UseGuards(ShopifyHmacGuard)
+  @Post('shopify/order.approved')
+  async handleOrderApproved(@Body() payload: ShopifyOrderPayload) {
+    await this.webhooksService.handleOrderApproved(payload);
+    return { success: true };
+  }
+
+  @Public()
+  @UseGuards(ShopifyHmacGuard)
   @Post('shopify/order.cancelled')
   async handleOrderCancelled(@Body() payload: { id: number }) {
     await this.webhooksService.handleOrderCancelled(payload);

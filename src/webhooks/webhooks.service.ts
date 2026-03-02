@@ -183,6 +183,68 @@ export class WebhooksService {
     );
   }
 
+  async handleOrderApproved(payload: ShopifyOrderPayload): Promise<void> {
+    const email = (payload.email ?? payload.contact_email ?? '').toLowerCase();
+    if (!email) {
+      await this.logWebhook(
+        'order-approved',
+        { orderId: payload.id },
+        'error',
+        'Email ausente',
+      );
+      return;
+    }
+
+    const phoneData = extractPhoneFromOrder(payload);
+    if (!phoneData) {
+      await this.logWebhook(
+        'order-approved',
+        { orderId: payload.id, email },
+        'error',
+        'Telefone ausente',
+      );
+      return;
+    }
+
+    const name = extractNameFromOrder(payload);
+    const cpf = extractCpfFromOrder(payload);
+    const products =
+      payload.line_items?.map((i) => i.title ?? i.name ?? '') ?? [];
+    const createdAt = payload.created_at;
+
+    const orderRef = this.firestore.collection('orders').doc(String(payload.id));
+    const snap = await orderRef.get();
+
+    if (snap.exists) {
+      // Order já existe, atualiza com status de aprovação
+      await orderRef.update({
+        name,
+        cpf: cpf ?? null,
+        products,
+        approvedAt: payload.updated_at ?? FieldValue.serverTimestamp(),
+      });
+    } else {
+      // Cria a ordem se não existir
+      await orderRef.set({
+        orderId: payload.id,
+        email,
+        phoneNumber: phoneData.phoneNumber,
+        phoneNumberAlt: phoneData.phoneNumberAlt,
+        name,
+        cpf: cpf ?? null,
+        products,
+        createdAt: createdAt ?? FieldValue.serverTimestamp(),
+        approvedAt: payload.updated_at ?? FieldValue.serverTimestamp(),
+      });
+    }
+
+    await this.logWebhook(
+      'order-approved',
+      { orderId: payload.id, email },
+      'success',
+    );
+  }
+
   async handleOrderCancelled(payload: { id: number }): Promise<void> {
     const orderRef = this.firestore.collection('orders').doc(String(payload.id));
     const snap = await orderRef.get();
