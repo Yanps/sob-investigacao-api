@@ -248,24 +248,52 @@ export class UsersService {
   }
 
   async listUserGames(phoneNumber: string): Promise<string[]> {
-    const snap = await this.firestore
-      .collection('chats')
-      .doc(phoneNumber)
-      .get();
+    // Normaliza o telefone: remove caracteres não numéricos
+    const phoneDigits = phoneNumber.replace(/\D/g, '');
+    const phoneAsNumber = parseInt(phoneDigits, 10);
 
-    if (!snap.exists) {
-      return [];
+    // Busca TODAS as orders para esse número (phoneNumber e phoneNumberAlt)
+    const [ordersByPhoneNum, ordersByPhoneStr, ordersByAltNum, ordersByAltStr] = await Promise.all([
+      this.firestore
+        .collection('orders')
+        .where('phoneNumber', '==', phoneAsNumber)
+        .get(),
+      this.firestore
+        .collection('orders')
+        .where('phoneNumber', '==', phoneDigits)
+        .get(),
+      this.firestore
+        .collection('orders')
+        .where('phoneNumberAlt', '==', phoneAsNumber)
+        .get(),
+      this.firestore
+        .collection('orders')
+        .where('phoneNumberAlt', '==', phoneDigits)
+        .get(),
+    ]);
+
+    // Coleta todos os orders únicos
+    const seen = new Set<string>();
+    const allOrders = [];
+
+    for (const snap of [ordersByPhoneNum, ordersByPhoneStr, ordersByAltNum, ordersByAltStr]) {
+      for (const doc of snap.docs) {
+        if (!seen.has(doc.id)) {
+          seen.add(doc.id);
+          allOrders.push(doc.data());
+        }
+      }
     }
 
-    const data = snap.data() as Chat | undefined;
-
-    if (!data) {
-      return [];
+    // Extrai gameTypes únicos de todos os orders
+    const gameTypes = new Set<string>();
+    for (const order of allOrders) {
+      if (order.gameType) {
+        gameTypes.add(order.gameType);
+      }
     }
 
-    const gameType = this.extractGameType(data);
-
-    return gameType ? [gameType] : [];
+    return Array.from(gameTypes);
   }
 
   /**
