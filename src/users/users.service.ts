@@ -274,7 +274,7 @@ export class UsersService {
 
     // Coleta todos os orders únicos
     const seen = new Set<string>();
-    const allOrders = [];
+    const allOrders: any[] = [];
 
     for (const snap of [ordersByPhoneNum, ordersByPhoneStr, ordersByAltNum, ordersByAltStr]) {
       for (const doc of snap.docs) {
