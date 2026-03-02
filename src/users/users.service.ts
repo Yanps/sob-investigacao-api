@@ -252,44 +252,38 @@ export class UsersService {
     const phoneDigits = phoneNumber.replace(/\D/g, '');
     const phoneAsNumber = parseInt(phoneDigits, 10);
 
-    // Busca TODAS as orders para esse número (phoneNumber e phoneNumberAlt)
-    const [ordersByPhoneNum, ordersByPhoneStr, ordersByAltNum, ordersByAltStr] = await Promise.all([
-      this.firestore
-        .collection('orders')
-        .where('phoneNumber', '==', phoneAsNumber)
-        .get(),
-      this.firestore
-        .collection('orders')
-        .where('phoneNumber', '==', phoneDigits)
-        .get(),
-      this.firestore
-        .collection('orders')
-        .where('phoneNumberAlt', '==', phoneAsNumber)
-        .get(),
-      this.firestore
-        .collection('orders')
-        .where('phoneNumberAlt', '==', phoneDigits)
-        .get(),
+    // Busca em ambas as collections para redundância
+    const [chatSnap, ordersByPhoneNum, ordersByPhoneStr, ordersByAltNum, ordersByAltStr] = await Promise.all([
+      this.firestore.collection('chats').doc(phoneDigits).get(),
+      this.firestore.collection('orders').where('phoneNumber', '==', phoneAsNumber).get(),
+      this.firestore.collection('orders').where('phoneNumber', '==', phoneDigits).get(),
+      this.firestore.collection('orders').where('phoneNumberAlt', '==', phoneAsNumber).get(),
+      this.firestore.collection('orders').where('phoneNumberAlt', '==', phoneDigits).get(),
     ]);
 
-    // Coleta todos os orders únicos
-    const seen = new Set<string>();
-    const allOrders: any[] = [];
+    const gameTypes = new Set<string>();
 
-    for (const snap of [ordersByPhoneNum, ordersByPhoneStr, ordersByAltNum, ordersByAltStr]) {
-      for (const doc of snap.docs) {
-        if (!seen.has(doc.id)) {
-          seen.add(doc.id);
-          allOrders.push(doc.data());
-        }
+    // Extrai gameType de 'chats'
+    if (chatSnap.exists) {
+      const data = chatSnap.data() as Chat | undefined;
+      if (data) {
+        const gameType = this.extractGameType(data);
+        if (gameType) gameTypes.add(gameType);
       }
     }
 
-    // Extrai gameTypes únicos de todos os orders
-    const gameTypes = new Set<string>();
-    for (const order of allOrders) {
-      if (order.gameType) {
-        gameTypes.add(order.gameType);
+    // Extrai gameTypes de 'orders'
+    const orderDocs = [ordersByPhoneNum, ordersByPhoneStr, ordersByAltNum, ordersByAltStr];
+    const seen = new Set<string>();
+    for (const snap of orderDocs) {
+      for (const doc of snap.docs) {
+        if (!seen.has(doc.id)) {
+          seen.add(doc.id);
+          const order = doc.data();
+          if (order.gameType) {
+            gameTypes.add(order.gameType);
+          }
+        }
       }
     }
 
