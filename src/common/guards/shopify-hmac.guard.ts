@@ -26,7 +26,7 @@ export class ShopifyHmacGuard implements CanActivate {
       );
     }
 
-    const body = request.rawBody || request.body;
+    const body = (request as any).rawBody || request.body;
     if (!body) {
       throw new BadRequestException('Corpo da requisição vazio.');
     }

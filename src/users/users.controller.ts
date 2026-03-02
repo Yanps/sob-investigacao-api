@@ -11,6 +11,7 @@ import {
 import { UsersService } from './users.service';
 import { Public } from '../common/decorators/public.decorator';
 import { ChangePhoneDto } from './dto/change-phone.dto';
+import { ActivateCodeDto } from './dto/activate-code.dto';
 
 @Controller('users')
 export class UsersController {
@@ -57,6 +58,15 @@ export class UsersController {
   @Post(':phoneNumber/reset-session')
   async resetSession(@Param('phoneNumber') phoneNumber: string) {
     return this.usersService.resetUserSession(phoneNumber);
+  }
+
+  @Public()
+  @Post(':phoneNumber/activate')
+  async activateCode(
+    @Param('phoneNumber') phoneNumber: string,
+    @Body() dto: ActivateCodeDto,
+  ) {
+    return this.usersService.activateCode(dto.codigoAtivacao, phoneNumber);
   }
 
   @Get(':phoneNumber')

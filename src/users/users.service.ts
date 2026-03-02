@@ -496,4 +496,110 @@ export class UsersService {
       message: 'Conversa encerrada com sucesso. Nova conversa e sessão serão criadas na próxima mensagem.',
     };
   }
+
+  /**
+   * Ativa um código de jogo para um usuário (via WhatsApp/agente Vertex AI).
+   * Fluxo:
+   * 1. Normaliza o telefone (strip non-digits + prefixar 55 se 10-11 dígitos)
+   * 2. Busca o código em gift_cards e valida se não foi usado
+   * 3. Busca o jogo via productId em games
+   * 4. Marca o código como usado (used: true, usedAt, usedByPhoneNumber, channel: 'whatsapp')
+   * 5. Cria order em 'orders' com source: 'game_activation'
+   * 6. Upsert chat em 'chats/{phone}' com lastMessage.gameType = gameId
+   * 7. Retorna sucesso com mensagem contendo o nome do jogo
+   */
+  async activateCode(
+    codigoAtivacao: string,
+    phoneNumber: string,
+  ): Promise<{ success: boolean; message: string }> {
+    // Normalizar código
+    const normalizedCode = codigoAtivacao.trim().toUpperCase();
+
+    // Normalizar telefone: strip non-digits
+    const phoneDigits = phoneNumber.replace(/\D/g, '');
+
+    // Adicionar 55 se 10 ou 11 dígitos (Brasil)
+    let normalizedPhone = phoneDigits;
+    if ((phoneDigits.length === 10 || phoneDigits.length === 11) && !phoneDigits.startsWith('55')) {
+      normalizedPhone = '55' + phoneDigits;
+    }
+
+    // 1. Buscar código em gift_cards
+    const codeSnap = await this.firestore
+      .collection('gift_cards')
+      .where('code', '==', normalizedCode)
+      .limit(1)
+      .get();
+
+    if (codeSnap.empty) {
+      throw new NotFoundException(
+        `Código de ativação não encontrado: ${normalizedCode}`,
+      );
+    }
+
+    const codeDoc = codeSnap.docs[0];
+    const codeData = codeDoc.data() as any;
+
+    // Validar que não foi usado
+    if (codeData.used === true) {
+      throw new ConflictException(
+        'Código já foi utilizado',
+      );
+    }
+
+    const productId = codeData.productId;
+
+    // 2. Buscar jogo via productId
+    const gameSnap = await this.firestore
+      .collection('games')
+      .where('productId', '==', productId)
+      .where('active', '==', true)
+      .limit(1)
+      .get();
+
+    if (gameSnap.empty) {
+      throw new NotFoundException(
+        `Jogo não encontrado para este código`,
+      );
+    }
+
+    const gameDoc = gameSnap.docs[0];
+    const gameId = gameDoc.id;
+    const gameName = gameDoc.data().name;
+
+    // 3. Marcar código como usado
+    const { FieldValue } = await import('firebase-admin/firestore');
+    await codeDoc.ref.update({
+      used: true,
+      usedAt: FieldValue.serverTimestamp(),
+      usedByPhoneNumber: normalizedPhone,
+      channel: 'whatsapp',
+    });
+
+    // 4. Criar order em 'orders'
+    const orderRef = this.firestore.collection('orders').doc();
+    await orderRef.set({
+      orderId: `game_${gameId}_${orderRef.id}`,
+      phoneNumber: normalizedPhone,
+      phoneNumberAlt: normalizedPhone,
+      email: null,
+      name: null,
+      products: [gameName],
+      source: 'game_activation',
+      gameId,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+
+    // 5. Upsert chat com lastMessage.gameType = gameId
+    const chatRef = this.firestore.collection('chats').doc(phoneDigits);
+    await chatRef.set(
+      { lastMessage: { gameType: gameId } },
+      { merge: true },
+    );
+
+    return {
+      success: true,
+      message: `Jogo ${gameName} ativado com sucesso!`,
+    };
+  }
 }
