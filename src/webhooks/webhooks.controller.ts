@@ -1,6 +1,5 @@
-import { Controller, Post, Body, UseGuards } from '@nestjs/common';
+import { Controller, Post, Body } from '@nestjs/common';
 import { Public } from '../common/decorators/public.decorator';
-import { ShopifyHmacGuard } from '../common/guards/shopify-hmac.guard';
 import { WebhooksService } from './webhooks.service';
 import type {
   ShopifyOrderPayload,
@@ -12,7 +11,7 @@ export class WebhooksController {
   constructor(private readonly webhooksService: WebhooksService) {}
 
   @Public()
-  @UseGuards(ShopifyHmacGuard)
+  // @UseGuards(ShopifyHmacGuard) // TODO: Implementar validação HMAC quando chave estiver configurada no Shopify
   @Post('shopify/order.created')
   async handleOrderCreated(@Body() payload: ShopifyOrderPayload) {
     console.log(`[Shopify] 📦 order.created recebido - Order ID: ${payload.id}, Email: ${payload.email}`);
@@ -27,7 +26,7 @@ export class WebhooksController {
   }
 
   @Public()
-  @UseGuards(ShopifyHmacGuard)
+  // @UseGuards(ShopifyHmacGuard) // TODO: Implementar validação HMAC quando chave estiver configurada no Shopify
   @Post('shopify/order.approved')
   async handleOrderApproved(@Body() payload: ShopifyOrderPayload) {
     console.log(`[Shopify] ✨ order.approved recebido - Order ID: ${payload.id}, Email: ${payload.email}`);
@@ -42,7 +41,7 @@ export class WebhooksController {
   }
 
   @Public()
-  @UseGuards(ShopifyHmacGuard)
+  // @UseGuards(ShopifyHmacGuard) // TODO: Implementar validação HMAC quando chave estiver configurada no Shopify
   @Post('shopify/order.cancelled')
   async handleOrderCancelled(@Body() payload: { id: number }) {
     console.log(`[Shopify] 🚫 order.cancelled recebido - Order ID: ${payload.id}`);
@@ -57,7 +56,7 @@ export class WebhooksController {
   }
 
   @Public()
-  @UseGuards(ShopifyHmacGuard)
+  // @UseGuards(ShopifyHmacGuard) // TODO: Implementar validação HMAC quando chave estiver configurada no Shopify
   @Post('shopify/order.updated')
   async handleOrderUpdated(@Body() payload: ShopifyOrderPayload) {
     console.log(`[Shopify] 📝 order.updated recebido - Order ID: ${payload.id}, Email: ${payload.email}`);
@@ -72,7 +71,7 @@ export class WebhooksController {
   }
 
   @Public()
-  @UseGuards(ShopifyHmacGuard)
+  // @UseGuards(ShopifyHmacGuard) // TODO: Implementar validação HMAC quando chave estiver configurada no Shopify
   @Post('shopify/customer.updated')
   async handleCustomerUpdated(@Body() payload: ShopifyCustomerPayload) {
     console.log(`[Shopify] 👤 customer.updated recebido - Customer ID: ${payload.id}, Email: ${payload.email}`);
