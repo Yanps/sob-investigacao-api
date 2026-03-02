@@ -14,13 +14,17 @@ export class WebhooksController {
   // @UseGuards(ShopifyHmacGuard) // TODO: Implementar validação HMAC quando chave estiver configurada no Shopify
   @Post('shopify/order.created')
   async handleOrderCreated(@Body() payload: ShopifyOrderPayload) {
+    if (!payload) {
+      console.error(`[Shopify] ❌ order.created recebido sem payload`);
+      throw new Error('Payload is required');
+    }
     console.log(`[Shopify] 📦 order.created recebido - Order ID: ${payload.id}, Email: ${payload.email}`);
     try {
       await this.webhooksService.handleOrderCreated(payload);
       console.log(`[Shopify] ✅ order.created processado com sucesso - Order ID: ${payload.id}`);
       return { success: true };
     } catch (error) {
-      console.error(`[Shopify] ❌ Erro ao processar order.created - Order ID: ${payload.id}`, error);
+      console.error(`[Shopify] ❌ Erro ao processar order.created - Order ID: ${payload?.id}`, error);
       throw error;
     }
   }
@@ -29,13 +33,17 @@ export class WebhooksController {
   // @UseGuards(ShopifyHmacGuard) // TODO: Implementar validação HMAC quando chave estiver configurada no Shopify
   @Post('shopify/order.approved')
   async handleOrderApproved(@Body() payload: ShopifyOrderPayload) {
+    if (!payload) {
+      console.error(`[Shopify] ❌ order.approved recebido sem payload`);
+      throw new Error('Payload is required');
+    }
     console.log(`[Shopify] ✨ order.approved recebido - Order ID: ${payload.id}, Email: ${payload.email}`);
     try {
       await this.webhooksService.handleOrderApproved(payload);
       console.log(`[Shopify] ✅ order.approved processado com sucesso - Order ID: ${payload.id}`);
       return { success: true };
     } catch (error) {
-      console.error(`[Shopify] ❌ Erro ao processar order.approved - Order ID: ${payload.id}`, error);
+      console.error(`[Shopify] ❌ Erro ao processar order.approved - Order ID: ${payload?.id}`, error);
       throw error;
     }
   }
@@ -44,13 +52,17 @@ export class WebhooksController {
   // @UseGuards(ShopifyHmacGuard) // TODO: Implementar validação HMAC quando chave estiver configurada no Shopify
   @Post('shopify/order.cancelled')
   async handleOrderCancelled(@Body() payload: { id: number }) {
+    if (!payload) {
+      console.error(`[Shopify] ❌ order.cancelled recebido sem payload`);
+      throw new Error('Payload is required');
+    }
     console.log(`[Shopify] 🚫 order.cancelled recebido - Order ID: ${payload.id}`);
     try {
       await this.webhooksService.handleOrderCancelled(payload);
       console.log(`[Shopify] ✅ order.cancelled processado com sucesso - Order ID: ${payload.id}`);
       return { success: true };
     } catch (error) {
-      console.error(`[Shopify] ❌ Erro ao processar order.cancelled - Order ID: ${payload.id}`, error);
+      console.error(`[Shopify] ❌ Erro ao processar order.cancelled - Order ID: ${payload?.id}`, error);
       throw error;
     }
   }
@@ -59,13 +71,17 @@ export class WebhooksController {
   // @UseGuards(ShopifyHmacGuard) // TODO: Implementar validação HMAC quando chave estiver configurada no Shopify
   @Post('shopify/order.updated')
   async handleOrderUpdated(@Body() payload: ShopifyOrderPayload) {
+    if (!payload) {
+      console.error(`[Shopify] ❌ order.updated recebido sem payload`);
+      throw new Error('Payload is required');
+    }
     console.log(`[Shopify] 📝 order.updated recebido - Order ID: ${payload.id}, Email: ${payload.email}`);
     try {
       await this.webhooksService.handleOrderUpdated(payload);
       console.log(`[Shopify] ✅ order.updated processado com sucesso - Order ID: ${payload.id}`);
       return { success: true };
     } catch (error) {
-      console.error(`[Shopify] ❌ Erro ao processar order.updated - Order ID: ${payload.id}`, error);
+      console.error(`[Shopify] ❌ Erro ao processar order.updated - Order ID: ${payload?.id}`, error);
       throw error;
     }
   }
@@ -74,13 +90,17 @@ export class WebhooksController {
   // @UseGuards(ShopifyHmacGuard) // TODO: Implementar validação HMAC quando chave estiver configurada no Shopify
   @Post('shopify/customer.updated')
   async handleCustomerUpdated(@Body() payload: ShopifyCustomerPayload) {
+    if (!payload) {
+      console.error(`[Shopify] ❌ customer.updated recebido sem payload`);
+      throw new Error('Payload is required');
+    }
     console.log(`[Shopify] 👤 customer.updated recebido - Customer ID: ${payload.id}, Email: ${payload.email}`);
     try {
       await this.webhooksService.handleCustomerUpdated(payload);
       console.log(`[Shopify] ✅ customer.updated processado com sucesso - Customer ID: ${payload.id}`);
       return { success: true };
     } catch (error) {
-      console.error(`[Shopify] ❌ Erro ao processar customer.updated - Customer ID: ${payload.id}`, error);
+      console.error(`[Shopify] ❌ Erro ao processar customer.updated - Customer ID: ${payload?.id}`, error);
       throw error;
     }
   }
