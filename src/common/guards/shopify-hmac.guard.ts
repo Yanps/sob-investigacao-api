@@ -11,9 +11,13 @@ import { Request } from 'express';
 export class ShopifyHmacGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest<Request>();
+    const path = request.path;
     const hmacHeader = request.get('X-Shopify-Hmac-SHA256');
 
+    console.log(`[Shopify Webhook] 🔍 Validando HMAC para: ${path}`);
+
     if (!hmacHeader) {
+      console.error(`[Shopify Webhook] ❌ Header X-Shopify-Hmac-SHA256 ausente`);
       throw new BadRequestException(
         'Header X-Shopify-Hmac-SHA256 ausente. Verifique a configuração do webhook no Shopify.',
       );
@@ -21,6 +25,7 @@ export class ShopifyHmacGuard implements CanActivate {
 
     const secret = process.env.SHOPIFY_WEBHOOK_SECRET;
     if (!secret) {
+      console.error(`[Shopify Webhook] ❌ SHOPIFY_WEBHOOK_SECRET não configurada`);
       throw new Error(
         'SHOPIFY_WEBHOOK_SECRET não configurada. Configure a variável de ambiente.',
       );
@@ -28,18 +33,24 @@ export class ShopifyHmacGuard implements CanActivate {
 
     const body = (request as any).rawBody || request.body;
     if (!body) {
+      console.error(`[Shopify Webhook] ❌ Corpo da requisição vazio`);
       throw new BadRequestException('Corpo da requisição vazio.');
     }
 
     const computed = this.computeHmac(body, secret);
     const isValid = this.constantTimeCompare(computed, hmacHeader);
 
+    console.log(`[Shopify Webhook] 🔐 HMAC esperado: ${hmacHeader.substring(0, 20)}...`);
+    console.log(`[Shopify Webhook] 🔐 HMAC computado: ${computed.substring(0, 20)}...`);
+
     if (!isValid) {
+      console.error(`[Shopify Webhook] ❌ HMAC inválido para ${path}`);
       throw new BadRequestException(
         'HMAC inválido. O webhook não vem do Shopify ou o secret está incorreto.',
       );
     }
 
+    console.log(`[Shopify Webhook] ✅ HMAC validado com sucesso`);
     return true;
   }
 

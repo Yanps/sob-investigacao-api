@@ -88,7 +88,10 @@ export class WebhooksService {
   }
 
   async handleOrderCreated(payload: ShopifyOrderPayload): Promise<void> {
+    console.log(`[Service] 🔄 Iniciando processamento handleOrderCreated - Order ID: ${payload.id}`);
+
     if (payload.note?.startsWith(YAMPI_NOTE_PREFIX)) {
+      console.log(`[Service] ⏭️  Ignorando pedido Yampi - Order ID: ${payload.id}`);
       await this.logWebhook(
         'order-created',
         { skipped: true, reason: 'Pedido Yampi' },
@@ -99,6 +102,7 @@ export class WebhooksService {
 
     const email = (payload.email ?? payload.contact_email ?? '').toLowerCase();
     if (!email) {
+      console.error(`[Service] ❌ Email ausente - Order ID: ${payload.id}`);
       await this.logWebhook(
         'order-created',
         { orderId: payload.id },
@@ -107,6 +111,7 @@ export class WebhooksService {
       );
       return;
     }
+    console.log(`[Service] 📧 Email extraído: ${email}`);
 
     const phoneData = extractPhoneFromOrder(payload);
     const name = extractNameFromOrder(payload);
@@ -115,11 +120,17 @@ export class WebhooksService {
       payload.line_items?.map((i) => i.title ?? i.name ?? '') ?? [];
     const createdAt = payload.created_at;
 
+    console.log(`[Service] 📱 Telefone: ${phoneData?.phoneNumber || 'não encontrado'}`);
+    console.log(`[Service] 👤 Nome: ${name}`);
+    console.log(`[Service] 🛍️  Produtos: ${products.length} item(ns)`);
+
     const customerRef = this.firestore.collection('customers').doc(email);
     const customerSnap = await customerRef.get();
 
     if (!customerSnap.exists) {
+      console.log(`[Service] 👤 Cliente não existe, criando novo: ${email}`);
       if (!phoneData) {
+        console.error(`[Service] ❌ Telefone ausente para criar customer - Order ID: ${payload.id}`);
         await this.logWebhook(
           'order-created',
           { orderId: payload.id, email },
@@ -139,9 +150,14 @@ export class WebhooksService {
         aiMessages: 1,
         createdAt: createdAt ?? FieldValue.serverTimestamp(),
       });
+      console.log(`[Service] ✅ Cliente criado: ${email}`);
+    } else {
+      console.log(`[Service] ✅ Cliente já existe: ${email}`);
     }
 
+    console.log(`[Service] 💳 Status financeiro: ${payload.financial_status}`);
     if (payload.financial_status !== 'paid') {
+      console.log(`[Service] ⏱️  Pedido não pago, aguardando pagamento - Order ID: ${payload.id}`);
       await this.logWebhook(
         'order-created',
         {
@@ -155,6 +171,7 @@ export class WebhooksService {
     }
 
     if (!phoneData) {
+      console.error(`[Service] ❌ Telefone ausente para criar order - Order ID: ${payload.id}`);
       await this.logWebhook(
         'order-created',
         { orderId: payload.id, email },
@@ -175,17 +192,22 @@ export class WebhooksService {
       products,
       createdAt: createdAt ?? FieldValue.serverTimestamp(),
     });
+    console.log(`[Service] 📦 Pedido criado no Firestore - Order ID: ${payload.id}`);
 
     await this.logWebhook(
       'order-created',
       { orderId: payload.id, email, status: 'paid' },
       'success',
     );
+    console.log(`[Service] ✅ handleOrderCreated finalizado com sucesso - Order ID: ${payload.id}`);
   }
 
   async handleOrderApproved(payload: ShopifyOrderPayload): Promise<void> {
+    console.log(`[Service] 🔄 Iniciando processamento handleOrderApproved - Order ID: ${payload.id}`);
+
     const email = (payload.email ?? payload.contact_email ?? '').toLowerCase();
     if (!email) {
+      console.error(`[Service] ❌ Email ausente - Order ID: ${payload.id}`);
       await this.logWebhook(
         'order-approved',
         { orderId: payload.id },
@@ -194,9 +216,11 @@ export class WebhooksService {
       );
       return;
     }
+    console.log(`[Service] 📧 Email extraído: ${email}`);
 
     const phoneData = extractPhoneFromOrder(payload);
     if (!phoneData) {
+      console.error(`[Service] ❌ Telefone ausente - Order ID: ${payload.id}`);
       await this.logWebhook(
         'order-approved',
         { orderId: payload.id, email },
@@ -205,6 +229,7 @@ export class WebhooksService {
       );
       return;
     }
+    console.log(`[Service] 📱 Telefone: ${phoneData.phoneNumber}`);
 
     const name = extractNameFromOrder(payload);
     const cpf = extractCpfFromOrder(payload);
@@ -212,10 +237,14 @@ export class WebhooksService {
       payload.line_items?.map((i) => i.title ?? i.name ?? '') ?? [];
     const createdAt = payload.created_at;
 
+    console.log(`[Service] 👤 Nome: ${name}`);
+    console.log(`[Service] 🛍️  Produtos: ${products.length} item(ns)`);
+
     const orderRef = this.firestore.collection('orders').doc(String(payload.id));
     const snap = await orderRef.get();
 
     if (snap.exists) {
+      console.log(`[Service] ✅ Pedido existe, atualizando com approvedAt - Order ID: ${payload.id}`);
       // Order já existe, atualiza com status de aprovação
       await orderRef.update({
         name,
@@ -224,6 +253,7 @@ export class WebhooksService {
         approvedAt: payload.updated_at ?? FieldValue.serverTimestamp(),
       });
     } else {
+      console.log(`[Service] 📦 Pedido não existe, criando novo com approvedAt - Order ID: ${payload.id}`);
       // Cria a ordem se não existir
       await orderRef.set({
         orderId: payload.id,
@@ -243,24 +273,36 @@ export class WebhooksService {
       { orderId: payload.id, email },
       'success',
     );
+    console.log(`[Service] ✅ handleOrderApproved finalizado com sucesso - Order ID: ${payload.id}`);
   }
 
   async handleOrderCancelled(payload: { id: number }): Promise<void> {
+    console.log(`[Service] 🔄 Iniciando processamento handleOrderCancelled - Order ID: ${payload.id}`);
+
     const orderRef = this.firestore.collection('orders').doc(String(payload.id));
     const snap = await orderRef.get();
     if (snap.exists) {
+      console.log(`[Service] 🗑️  Deletando pedido - Order ID: ${payload.id}`);
       await orderRef.delete();
+      console.log(`[Service] ✅ Pedido deletado - Order ID: ${payload.id}`);
+    } else {
+      console.log(`[Service] ℹ️  Pedido não existe para deletar - Order ID: ${payload.id}`);
     }
     await this.logWebhook('order-cancelled', { orderId: payload.id }, 'success');
+    console.log(`[Service] ✅ handleOrderCancelled finalizado - Order ID: ${payload.id}`);
   }
 
   async handleOrderUpdated(payload: ShopifyOrderPayload): Promise<void> {
+    console.log(`[Service] 🔄 Iniciando processamento handleOrderUpdated - Order ID: ${payload.id}`);
+
     const orderRef = this.firestore.collection('orders').doc(String(payload.id));
     const snap = await orderRef.get();
     if (!snap.exists) {
+      console.log(`[Service] ℹ️  Pedido não existe, nada a atualizar - Order ID: ${payload.id}`);
       await this.logWebhook('order-updated', { orderId: payload.id }, 'success');
       return;
     }
+
     const phoneData = extractPhoneFromOrder(payload);
     const name = extractNameFromOrder(payload);
     const cpf = extractCpfFromOrder(payload);
@@ -275,19 +317,29 @@ export class WebhooksService {
     if (phoneData) {
       updates.phoneNumber = phoneData.phoneNumber;
       updates.phoneNumberAlt = phoneData.phoneNumberAlt;
+      console.log(`[Service] 📱 Telefone atualizado: ${phoneData.phoneNumber}`);
     }
     const email = (payload.email ?? payload.contact_email ?? '').toLowerCase();
-    if (email) updates.email = email;
+    if (email) {
+      updates.email = email;
+      console.log(`[Service] 📧 Email atualizado: ${email}`);
+    }
+
+    console.log(`[Service] 📝 Atualizando pedido no Firestore - Order ID: ${payload.id}`);
     await orderRef.update(updates);
     await this.logWebhook('order-updated', { orderId: payload.id }, 'success');
+    console.log(`[Service] ✅ handleOrderUpdated finalizado com sucesso - Order ID: ${payload.id}`);
   }
 
   async handleCustomerUpdated(
     payload: ShopifyCustomerPayload,
   ): Promise<void> {
+    console.log(`[Service] 🔄 Iniciando processamento handleCustomerUpdated - Customer ID: ${payload.id}`);
+
     const rawPhone =
       payload.phone ?? payload.default_address?.phone ?? null;
     if (!rawPhone) {
+      console.log(`[Service] ℹ️  Nenhum telefone encontrado - Customer ID: ${payload.id}`);
       await this.logWebhook(
         'customer-updated',
         { customerId: payload.id },
@@ -295,9 +347,11 @@ export class WebhooksService {
       );
       return;
     }
+    console.log(`[Service] 📱 Telefone bruto extraído: ${rawPhone}`);
 
     const phoneData = normalizePhone(rawPhone);
     if (!phoneData) {
+      console.log(`[Service] ⚠️  Telefone inválido - Customer ID: ${payload.id}`);
       await this.logWebhook(
         'customer-updated',
         { customerId: payload.id },
@@ -305,9 +359,11 @@ export class WebhooksService {
       );
       return;
     }
+    console.log(`[Service] 📱 Telefone normalizado: ${phoneData.phoneNumber}`);
 
     const email = (payload.email ?? '').toLowerCase();
     if (!email) {
+      console.error(`[Service] ❌ Email ausente - Customer ID: ${payload.id}`);
       await this.logWebhook(
         'customer-updated',
         { customerId: payload.id },
@@ -316,6 +372,7 @@ export class WebhooksService {
       );
       return;
     }
+    console.log(`[Service] 📧 Email: ${email}`);
 
     const name =
       payload.first_name || payload.last_name
@@ -332,11 +389,13 @@ export class WebhooksService {
               .join(' ')
               .trim()
           : 'Cliente';
+    console.log(`[Service] 👤 Nome: ${name}`);
 
     const customerByEmailRef = this.firestore.collection('customers').doc(email);
     const customerByEmailSnap = await customerByEmailRef.get();
 
     if (customerByEmailSnap.exists) {
+      console.log(`[Service] ✅ Cliente já existe por email - Email: ${email}`);
       await this.logWebhook(
         'customer-updated',
         { email, customerId: payload.id },
@@ -344,6 +403,7 @@ export class WebhooksService {
       );
       return;
     }
+    console.log(`[Service] 🔍 Cliente não existe por email, buscando por telefone`);
 
     const customersByPhoneSnap = await this.firestore
       .collection('customers')
@@ -360,6 +420,7 @@ export class WebhooksService {
     const existingDoc =
       customersByPhoneSnap.docs[0] ?? altSnap.docs[0];
     if (!existingDoc) {
+      console.log(`[Service] 👤 Cliente não existe, criando novo - Email: ${email}`);
       await customerByEmailRef.set({
         email,
         phoneNumber: phoneData.phoneNumber,
@@ -370,6 +431,7 @@ export class WebhooksService {
         aiMessages: 0,
         createdAt: FieldValue.serverTimestamp(),
       });
+      console.log(`[Service] ✅ Cliente criado - Email: ${email}`);
       await this.logWebhook(
         'customer-updated',
         { email, customerId: payload.id, created: true },
@@ -378,6 +440,7 @@ export class WebhooksService {
       return;
     }
 
+    console.log(`[Service] 🔄 Cliente encontrado por telefone, consolidando registros`);
     const oldData = existingDoc.data();
     const newDoc = {
       email,
@@ -391,7 +454,10 @@ export class WebhooksService {
       createdAt: oldData?.createdAt ?? FieldValue.serverTimestamp(),
     };
     await customerByEmailRef.set(newDoc);
+    console.log(`[Service] 📝 Cliente atualizado com novo email - Email: ${email}`);
+
     await this.firestore.collection('customers').doc(existingDoc.id).delete();
+    console.log(`[Service] 🗑️  Cliente antigo deletado - Doc ID: ${existingDoc.id}`);
 
     const ordersSnap = await this.firestore
       .collection('orders')
@@ -402,6 +468,8 @@ export class WebhooksService {
       .where('phoneNumberAlt', '==', phoneData.phoneNumber)
       .get();
 
+    console.log(`[Service] 📦 Atualizando ${ordersSnap.docs.length + ordersAltSnap.docs.length} pedido(s)`);
+
     const batch = this.firestore.batch();
     for (const doc of ordersSnap.docs) {
       batch.update(doc.ref, { email });
@@ -410,6 +478,8 @@ export class WebhooksService {
       batch.update(doc.ref, { email });
     }
     await batch.commit();
+    console.log(`[Service] ✅ Pedidos atualizados com novo email`);
+
     await this.logWebhook(
       'customer-updated',
       {
@@ -419,5 +489,6 @@ export class WebhooksService {
       },
       'success',
     );
+    console.log(`[Service] ✅ handleCustomerUpdated finalizado com sucesso - Email: ${email}`);
   }
 }

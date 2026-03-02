@@ -15,39 +15,74 @@ export class WebhooksController {
   @UseGuards(ShopifyHmacGuard)
   @Post('shopify/order.created')
   async handleOrderCreated(@Body() payload: ShopifyOrderPayload) {
-    await this.webhooksService.handleOrderCreated(payload);
-    return { success: true };
+    console.log(`[Shopify] 📦 order.created recebido - Order ID: ${payload.id}, Email: ${payload.email}`);
+    try {
+      await this.webhooksService.handleOrderCreated(payload);
+      console.log(`[Shopify] ✅ order.created processado com sucesso - Order ID: ${payload.id}`);
+      return { success: true };
+    } catch (error) {
+      console.error(`[Shopify] ❌ Erro ao processar order.created - Order ID: ${payload.id}`, error);
+      throw error;
+    }
   }
 
   @Public()
   @UseGuards(ShopifyHmacGuard)
   @Post('shopify/order.approved')
   async handleOrderApproved(@Body() payload: ShopifyOrderPayload) {
-    await this.webhooksService.handleOrderApproved(payload);
-    return { success: true };
+    console.log(`[Shopify] ✨ order.approved recebido - Order ID: ${payload.id}, Email: ${payload.email}`);
+    try {
+      await this.webhooksService.handleOrderApproved(payload);
+      console.log(`[Shopify] ✅ order.approved processado com sucesso - Order ID: ${payload.id}`);
+      return { success: true };
+    } catch (error) {
+      console.error(`[Shopify] ❌ Erro ao processar order.approved - Order ID: ${payload.id}`, error);
+      throw error;
+    }
   }
 
   @Public()
   @UseGuards(ShopifyHmacGuard)
   @Post('shopify/order.cancelled')
   async handleOrderCancelled(@Body() payload: { id: number }) {
-    await this.webhooksService.handleOrderCancelled(payload);
-    return { success: true };
+    console.log(`[Shopify] 🚫 order.cancelled recebido - Order ID: ${payload.id}`);
+    try {
+      await this.webhooksService.handleOrderCancelled(payload);
+      console.log(`[Shopify] ✅ order.cancelled processado com sucesso - Order ID: ${payload.id}`);
+      return { success: true };
+    } catch (error) {
+      console.error(`[Shopify] ❌ Erro ao processar order.cancelled - Order ID: ${payload.id}`, error);
+      throw error;
+    }
   }
 
   @Public()
   @UseGuards(ShopifyHmacGuard)
   @Post('shopify/order.updated')
   async handleOrderUpdated(@Body() payload: ShopifyOrderPayload) {
-    await this.webhooksService.handleOrderUpdated(payload);
-    return { success: true };
+    console.log(`[Shopify] 📝 order.updated recebido - Order ID: ${payload.id}, Email: ${payload.email}`);
+    try {
+      await this.webhooksService.handleOrderUpdated(payload);
+      console.log(`[Shopify] ✅ order.updated processado com sucesso - Order ID: ${payload.id}`);
+      return { success: true };
+    } catch (error) {
+      console.error(`[Shopify] ❌ Erro ao processar order.updated - Order ID: ${payload.id}`, error);
+      throw error;
+    }
   }
 
   @Public()
   @UseGuards(ShopifyHmacGuard)
   @Post('shopify/customer.updated')
   async handleCustomerUpdated(@Body() payload: ShopifyCustomerPayload) {
-    await this.webhooksService.handleCustomerUpdated(payload);
-    return { success: true };
+    console.log(`[Shopify] 👤 customer.updated recebido - Customer ID: ${payload.id}, Email: ${payload.email}`);
+    try {
+      await this.webhooksService.handleCustomerUpdated(payload);
+      console.log(`[Shopify] ✅ customer.updated processado com sucesso - Customer ID: ${payload.id}`);
+      return { success: true };
+    } catch (error) {
+      console.error(`[Shopify] ❌ Erro ao processar customer.updated - Customer ID: ${payload.id}`, error);
+      throw error;
+    }
   }
 }
