@@ -6,6 +6,23 @@ async function bootstrap() {
     console.log('🚀 Initializing NestJS application...');
     const app = await NestFactory.create(AppModule, {
       logger: ['error', 'warn', 'log'],
+      rawBody: true,
+    });
+
+    // Middleware para capturar raw body para validação HMAC
+    app.use((req, res, next) => {
+      if (req.path.includes('/webhooks/shopify/')) {
+        let data = '';
+        req.on('data', (chunk) => {
+          data += chunk;
+        });
+        req.on('end', () => {
+          (req as any).rawBody = data;
+          next();
+        });
+      } else {
+        next();
+      }
     });
 
     app.enableCors({ origin: true }); // aceita qualquer origin

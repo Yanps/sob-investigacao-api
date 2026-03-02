@@ -6,13 +6,20 @@ import {
   Param,
   Query,
   NotFoundException,
+  Res,
+  BadRequestException,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { CodesService } from './codes.service';
+import { PdfGenerationService } from './pdf-generation.service';
 import { GenerateCodesDto } from './dto/generate-codes.dto';
 
 @Controller('codes')
 export class CodesController {
-  constructor(private readonly codesService: CodesService) {}
+  constructor(
+    private readonly codesService: CodesService,
+    private readonly pdfGenerationService: PdfGenerationService,
+  ) {}
 
   @Post('generate')
   async generate(@Body() dto: GenerateCodesDto) {
@@ -46,6 +53,34 @@ export class CodesController {
   @Get('batches')
   async listBatches() {
     return this.codesService.listBatches();
+  }
+
+  @Get('download')
+  async downloadBatch(
+    @Query('batchId') batchId: string,
+    @Res() res: Response,
+  ) {
+    if (!batchId?.trim()) {
+      throw new BadRequestException('batchId é obrigatório');
+    }
+
+    // Fetch all codes for the batch
+    const codes = await this.codesService.listAllForBatch(batchId);
+
+    if (!codes.length) {
+      throw new NotFoundException(`Nenhum código encontrado para o lote: ${batchId}`);
+    }
+
+    // Generate ZIP with PDFs
+    const zipBuffer = await this.pdfGenerationService.generateBatchZip(codes);
+
+    // Return ZIP file
+    res.set({
+      'Content-Type': 'application/zip',
+      'Content-Disposition': `attachment; filename="codigos_${batchId}.zip"`,
+      'Content-Length': zipBuffer.length,
+    });
+    res.send(zipBuffer);
   }
 
   @Get(':code')

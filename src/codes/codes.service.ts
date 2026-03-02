@@ -229,4 +229,37 @@ export class CodesService {
       createdAt: d.createdAt,
     };
   }
+
+  async listAllForBatch(
+    batchId: string,
+  ): Promise<{ code: string; productId?: string }[]> {
+    if (!batchId?.trim()) {
+      throw new BadRequestException('batchId é obrigatório');
+    }
+
+    try {
+      this.logger.log(`Fetching all codes for batch: ${batchId}`);
+
+      let query = this.firestore
+        .collection(COLLECTION)
+        .where('batchId', '==', batchId.trim())
+        .orderBy('createdAt', 'asc');
+
+      const snapshot = await query.get();
+      this.logger.log(
+        `Found ${snapshot.docs.length} codes for batch ${batchId}`,
+      );
+
+      return snapshot.docs.map((doc) => {
+        const d = doc.data();
+        return {
+          code: d.code,
+          productId: d.productId,
+        };
+      });
+    } catch (error) {
+      this.logger.error(`Error in listAllForBatch(): ${error.message}`);
+      throw error;
+    }
+  }
 }
