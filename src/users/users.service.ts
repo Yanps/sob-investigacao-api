@@ -463,4 +463,37 @@ export class UsersService {
       message: `Telefone migrado com sucesso de ${normalizedOldDigits} para ${normalizedNewDigits}`,
     };
   }
+
+  /**
+   * Reseta a sessão Vertex AI de um usuário encerrando a conversa ativa.
+   * Ao fechar a conversa, o Worker automaticamente cria uma nova conversa
+   * com adkSessionId null na próxima mensagem, gerando uma nova sessão Vertex AI.
+   */
+  async resetUserSession(phoneNumber: string): Promise<{ success: boolean; message: string }> {
+    const phoneDigits = phoneNumber.replace(/\D/g, '');
+
+    const snap = await this.firestore
+      .collection('conversations')
+      .where('phoneNumber', '==', phoneDigits)
+      .where('status', '==', 'active')
+      .orderBy('lastMessageAt', 'desc')
+      .limit(1)
+      .get();
+
+    if (snap.empty) {
+      throw new NotFoundException(
+        `Nenhuma conversa ativa para o telefone: ${phoneDigits}`,
+      );
+    }
+
+    await snap.docs[0].ref.update({
+      status: 'closed',
+      closedAt: new Date(),
+    });
+
+    return {
+      success: true,
+      message: 'Conversa encerrada com sucesso. Nova conversa e sessão serão criadas na próxima mensagem.',
+    };
+  }
 }

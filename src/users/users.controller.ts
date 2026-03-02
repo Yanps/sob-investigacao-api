@@ -3,6 +3,7 @@ import {
   Get,
   Param,
   Patch,
+  Post,
   Body,
   Query,
   NotFoundException,
@@ -51,6 +52,11 @@ export class UsersController {
   @Get(':phoneNumber/games')
   async listGames(@Param('phoneNumber') phoneNumber: string) {
     return this.usersService.listUserGames(phoneNumber);
+  }
+
+  @Post(':phoneNumber/reset-session')
+  async resetSession(@Param('phoneNumber') phoneNumber: string) {
+    return this.usersService.resetUserSession(phoneNumber);
   }
 
   @Get(':phoneNumber')
