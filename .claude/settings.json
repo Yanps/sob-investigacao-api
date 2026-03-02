@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gcloud run services logs read sob-investigacao-api --region us-central1 --limit 300)",
+      "Bash(gcloud run services logs read sob-investigacao-api --region us-central1 --limit 400)",
+      "Bash(git add -A)",
+      "Bash(git commit -m \"fix: remove raw body middleware interfering with JSON parsing\")",
+      "Bash(git push origin master)"
+    ]
+  }
+}

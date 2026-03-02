@@ -9,21 +9,21 @@ async function bootstrap() {
       rawBody: true,
     });
 
-    // Middleware para capturar raw body para validação HMAC
-    app.use((req, res, next) => {
-      if (req.path.includes('/webhooks/shopify/')) {
-        let data = '';
-        req.on('data', (chunk) => {
-          data += chunk;
-        });
-        req.on('end', () => {
-          (req as any).rawBody = data;
-          next();
-        });
-      } else {
-        next();
-      }
-    });
+    // Middleware para capturar raw body para validação HMAC (não mais necessário)
+    // app.use((req, res, next) => {
+    //   if (req.path.includes('/webhooks/shopify/')) {
+    //     let data = '';
+    //     req.on('data', (chunk) => {
+    //       data += chunk;
+    //     });
+    //     req.on('end', () => {
+    //       (req as any).rawBody = data;
+    //       next();
+    //     });
+    //   } else {
+    //     next();
+    //   }
+    // });
 
     app.enableCors({ origin: true }); // aceita qualquer origin
     app.enableShutdownHooks();
