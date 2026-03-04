@@ -586,7 +586,7 @@ export class UsersService {
       name: null,
       products: [gameName],
       source: 'game_activation',
-      gameId,
+      gameType: gameId,
       createdAt: FieldValue.serverTimestamp(),
     });
 
