@@ -63,10 +63,15 @@ pnpm format           # Formatar com Prettier
 2. Projeto GCP configurado com billing
 3. Autenticado no gcloud: `gcloud auth login`
 
+### GCP Project ID
+```
+sob-investigacao-f6af4
+```
+
 ### Deploy Rapido
 ```bash
 # 1. Configurar projeto (se necessario)
-export GCP_PROJECT_ID="seu-project-id"
+export GCP_PROJECT_ID="sob-investigacao-f6af4"
 gcloud config set project $GCP_PROJECT_ID
 
 # 2. Executar deploy
