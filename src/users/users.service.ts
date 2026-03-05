@@ -280,8 +280,9 @@ export class UsersService {
         if (!seen.has(doc.id)) {
           seen.add(doc.id);
           const order = doc.data();
-          if (order.gameType) {
-            gameTypes.add(order.gameType);
+          const game = order.gameType ?? order.gameId;
+          if (game) {
+            gameTypes.add(game);
           }
         }
       }
